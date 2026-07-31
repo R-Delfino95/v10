@@ -1,6 +1,6 @@
+import type { MediaBufferState, MediaPlaybackState, MediaTimeState } from '@videojs/media';
+import { formatTimeAsPhrase } from '@videojs/utils/time';
 import { describe, expect, it, vi } from 'vitest';
-
-import type { MediaBufferState, MediaPlaybackState, MediaTimeState } from '../../../media/state';
 import type { SliderInput } from '../../slider/slider-core';
 import { TimeSliderCore } from '../time-slider-core';
 
@@ -33,7 +33,7 @@ describe('TimeSliderCore', () => {
   describe('defaultProps', () => {
     it('has expected defaults', () => {
       expect(TimeSliderCore.defaultProps).toEqual({
-        label: 'Seek',
+        label: '',
         step: 1,
         largeStep: 10,
         orientation: 'horizontal',
@@ -157,8 +157,12 @@ describe('TimeSliderCore', () => {
       const state = core.getState();
       const attrs = core.getAttrs(state);
 
-      expect(attrs['aria-label']).toBe('Seek');
-      expect(attrs['aria-valuetext']).toBe('1 minute, 30 seconds of 5 minutes');
+      expect(attrs['aria-label']).toMatchObject({ key: 'slider.seek', text: 'Seek' });
+      expect(attrs['aria-valuetext']).toMatchObject({ key: 'time.position', text: '{current} of {duration}' });
+      expect(core.getValueTextParams(state)).toEqual({
+        current: formatTimeAsPhrase(90),
+        duration: formatTimeAsPhrase(300),
+      });
       expect(attrs.role).toBe('slider');
     });
 
@@ -179,7 +183,11 @@ describe('TimeSliderCore', () => {
       const state = core.getState();
       const attrs = core.getAttrs(state);
 
-      expect(attrs['aria-valuetext']).toBe('0 seconds of 0 seconds');
+      expect(attrs['aria-valuetext']).toMatchObject({ key: 'time.position', text: '{current} of {duration}' });
+      expect(core.getValueTextParams(state)).toEqual({
+        current: formatTimeAsPhrase(0),
+        duration: formatTimeAsPhrase(0),
+      });
     });
 
     it('announces drag position in valuetext during drag', () => {
@@ -189,9 +197,25 @@ describe('TimeSliderCore', () => {
       const state = core.getState();
       const attrs = core.getAttrs(state);
 
-      // pointerPercent is 50 → 150s → "2 minutes, 30 seconds of 5 minutes"
       expect(attrs['aria-valuenow']).toBe(150);
-      expect(attrs['aria-valuetext']).toBe('2 minutes, 30 seconds of 5 minutes');
+      expect(attrs['aria-valuetext']).toMatchObject({ key: 'time.position', text: '{current} of {duration}' });
+      expect(core.getValueTextParams(state)).toEqual({
+        current: formatTimeAsPhrase(150),
+        duration: formatTimeAsPhrase(300),
+      });
+    });
+
+    it('formats value text params with the active locale', () => {
+      const core = new TimeSliderCore();
+      core.setFormatLocale('fr');
+      core.setInput(createInput());
+      core.setMedia(createMediaState({ currentTime: 90, duration: 300 }));
+      const state = core.getState();
+
+      expect(core.getValueTextParams(state)).toEqual({
+        current: formatTimeAsPhrase(90, { locale: 'fr' }),
+        duration: formatTimeAsPhrase(300, { locale: 'fr' }),
+      });
     });
   });
 

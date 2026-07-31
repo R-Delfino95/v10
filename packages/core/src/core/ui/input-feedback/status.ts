@@ -1,5 +1,19 @@
 import { clamp } from '@videojs/utils/number';
-import { formatTime } from '@videojs/utils/time';
+import { formatTime, formatTimeAsPhrase } from '@videojs/utils/time';
+import { translateText } from '../../i18n';
+import { exitText } from '../../i18n/text/fullscreen';
+import { rateText } from '../../i18n/text/playback';
+import {
+  captionsOffText,
+  captionsOnText,
+  exitPipText,
+  fullscreenText,
+  pausedText,
+  pipText,
+  playingText,
+  seekedToText,
+} from '../../i18n/text/status';
+import { labelText, mutedText, valueText } from '../../i18n/text/volume';
 
 export type InputActionSource = 'gesture' | 'hotkey';
 
@@ -44,6 +58,7 @@ export interface MediaSnapshot {
   paused?: boolean | undefined;
   volume?: number | undefined;
   muted?: boolean | undefined;
+  playbackRate?: number | undefined;
   fullscreen?: boolean | undefined;
   subtitlesShowing?: boolean | undefined;
   /** When false, caption toggles are unavailable and status feedback is suppressed. */
@@ -51,6 +66,7 @@ export interface MediaSnapshot {
   pip?: boolean | undefined;
   currentTime?: number | undefined;
   duration?: number | undefined;
+  seeking?: boolean | undefined;
 }
 
 export interface InputIndicatorLabels {
@@ -66,6 +82,12 @@ export interface InputIndicatorLabels {
   exitPictureInPicture: string;
 }
 
+export interface StatusAnnouncerLabels extends InputIndicatorLabels {
+  volumeWithValue: (value: string) => string;
+  seekedTo: (time: number) => string;
+  playbackRate: (rate: string) => string;
+}
+
 export interface StatusDetails {
   status: IndicatorStatus;
   label: string;
@@ -74,16 +96,23 @@ export interface StatusDetails {
 }
 
 export const DEFAULT_INPUT_INDICATOR_LABELS: InputIndicatorLabels = {
-  muted: 'Muted',
-  volume: 'Volume',
-  captionsOn: 'Captions on',
-  captionsOff: 'Captions off',
-  paused: 'Paused',
-  playing: 'Playing',
-  fullscreen: 'Fullscreen',
-  exitFullscreen: 'Exit fullscreen',
-  pictureInPicture: 'Picture in picture',
-  exitPictureInPicture: 'Exit picture in picture',
+  muted: translateText(mutedText),
+  volume: translateText(labelText),
+  captionsOn: translateText(captionsOnText),
+  captionsOff: translateText(captionsOffText),
+  paused: translateText(pausedText),
+  playing: translateText(playingText),
+  fullscreen: translateText(fullscreenText),
+  exitFullscreen: translateText(exitText),
+  pictureInPicture: translateText(pipText),
+  exitPictureInPicture: translateText(exitPipText),
+};
+
+export const DEFAULT_STATUS_ANNOUNCER_LABELS: StatusAnnouncerLabels = {
+  ...DEFAULT_INPUT_INDICATOR_LABELS,
+  volumeWithValue: (value) => translateText(valueText, { value }),
+  seekedTo: (time) => translateText(seekedToText, { time: formatTimeAsPhrase(time) }),
+  playbackRate: (rate) => translateText(rateText, { rate }),
 };
 
 export function isVolumeIndicatorAction(action: string | null | undefined): action is 'toggleMuted' | 'volumeStep' {
@@ -145,21 +174,6 @@ export function deriveStatus(
   }
 }
 
-export function deriveAnnouncerLabel(
-  event: InputActionEvent,
-  snapshot: MediaSnapshot,
-  labels: InputIndicatorLabels = DEFAULT_INPUT_INDICATOR_LABELS
-): string | null {
-  const details = deriveStatus(event, snapshot, labels);
-  if (!details) return null;
-
-  if (isVolumeIndicatorAction(event.action)) {
-    return details.status === 'volume-off' ? labels.muted : `${labels.volume} ${details.value}`;
-  }
-
-  return details.label;
-}
-
 export function getVolumeLevel(volume: number): IndicatorVolumeLevel {
   if (volume <= 0) return 'off';
   return volume <= 0.5 ? 'low' : 'high';
@@ -169,8 +183,20 @@ export function formatVolumeValue(volume: number): string {
   return `${Math.round(clamp(volume, 0, 1) * 100)}%`;
 }
 
+export function formatPlaybackRateValue(rate: number): string {
+  return `${rate}×`;
+}
+
 export function formatCurrentTime(snapshot: MediaSnapshot): string {
   return formatTime(snapshot.currentTime ?? 0, snapshot.duration);
+}
+
+export function formatSeekAnnouncerLabel(time: number, labels: StatusAnnouncerLabels): string {
+  return labels.seekedTo(time);
+}
+
+export function formatPlaybackRateAnnouncerLabel(rate: number, labels: StatusAnnouncerLabels): string {
+  return labels.playbackRate(formatPlaybackRateValue(rate));
 }
 
 export function getStatusIndicatorDisplayValue(state: { value: string | null; label: string | null }): string {

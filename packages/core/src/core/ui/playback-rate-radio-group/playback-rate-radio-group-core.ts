@@ -1,14 +1,16 @@
+import type { MediaPlaybackRateState } from '@videojs/media';
 import { createState } from '@videojs/store';
 import { defaults } from '@videojs/utils/object';
-import { isFunction, isUndefined } from '@videojs/utils/predicate';
+import { isUndefined } from '@videojs/utils/predicate';
 import type { NonNullableObject } from '@videojs/utils/types';
-
-import type { MediaPlaybackRateState } from '../../media/state';
+import { resolveText, type Text } from '../../i18n';
+import { rateText } from '../../i18n/text/playback';
 import type { ButtonState } from '../types';
+import { resolveLabel } from '../utils/resolve-label';
 
 export interface PlaybackRateRadioGroupProps {
   /** Custom label for the options group. */
-  label?: string | ((state: PlaybackRateRadioGroupState) => string) | undefined;
+  label?: Text | string | ((state: PlaybackRateRadioGroupState) => Text | string) | undefined;
   /** Custom formatter for visible playback rate labels. */
   formatRate?: ((rate: number) => string) | undefined;
   /** Whether playback rate selection is disabled. */
@@ -52,17 +54,15 @@ export class PlaybackRateRadioGroupCore {
     this.#props = defaults(props, PlaybackRateRadioGroupCore.defaultProps);
   }
 
-  getLabel(state: PlaybackRateRadioGroupState): string {
-    const { label } = this.#props;
+  getLabel(state: PlaybackRateRadioGroupState): Text | string {
+    const custom = resolveLabel(this.#props.label, state);
+    if (custom !== undefined) return custom;
+    return rateText;
+  }
 
-    if (isFunction(label)) {
-      const customLabel = label(state);
-      if (customLabel) return customLabel;
-    } else if (label) {
-      return label;
-    }
-
-    return `Playback rate ${state.rate}`;
+  getLabelParams(state: PlaybackRateRadioGroupState): { rate: number } | undefined {
+    if (resolveLabel(this.#props.label, state) !== undefined) return undefined;
+    return { rate: state.rate };
   }
 
   getRateLabel(rate: number): string {
@@ -96,7 +96,7 @@ export class PlaybackRateRadioGroupCore {
       disabled: this.#props.disabled || media.playbackRates.length === 0,
       availability,
     });
-    this.state.patch({ label: this.getLabel(this.state.current) });
+    this.state.patch({ label: resolveText(this.getLabel(this.state.current)) });
 
     return this.state.current;
   }

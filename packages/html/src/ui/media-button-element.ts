@@ -13,12 +13,27 @@ import {
   logMissingFeature,
   type UIEvent,
 } from '@videojs/core/dom';
+import { isText, resolveText, type Text, translateText } from '@videojs/core/i18n';
 import type { PropertyDeclarationMap, PropertyValues } from '@videojs/element';
 import type { State } from '@videojs/store';
 
+import { i18nContext } from '../i18n/context';
+import { I18nController } from '../i18n/controller';
 import type { PlayerController } from '../player/player-controller';
 import { AriaKeyShortcutsController } from './hotkey/aria-key-shortcuts-controller';
 import { MediaElement } from './media-element';
+
+type LabelParams = Record<string, string | number>;
+type LabelParamsCore<Core extends MediaButtonComponent> = Core & {
+  getLabelParams?: (state: InferComponentState<Core>) => LabelParams | undefined;
+};
+
+function getLabelParams<Core extends MediaButtonComponent>(
+  core: Core,
+  state: InferComponentState<Core>
+): LabelParams | undefined {
+  return (core as LabelParamsCore<Core>).getLabelParams?.(state);
+}
 
 /** Abstract base for HTML custom elements that render a media-control button. */
 export abstract class MediaButtonElement<Core extends MediaButtonComponent> extends MediaElement {
@@ -28,20 +43,25 @@ export abstract class MediaButtonElement<Core extends MediaButtonComponent> exte
   };
 
   disabled = false;
-  label = '';
+  label: Text | string = '';
 
   protected abstract readonly core: Core;
   protected abstract readonly stateAttrMap: StateAttrMap<InferComponentState<Core>>;
   protected abstract readonly mediaState: PlayerController<any, InferMediaState<Core> | undefined>;
 
-  protected abstract activate(state: InferMediaState<Core>, event?: UIEvent): void;
+  protected abstract activate(state: InferMediaState<Core>, event?: UIEvent): void | Promise<void>;
 
   protected getIsButtonDisabled(): boolean {
     return this.disabled || !this.mediaState.value;
   }
 
   protected handleActivate(event: UIEvent): void {
-    this.activate(this.mediaState.value!, event);
+    // `createButton` invokes `onActivate` synchronously from click/keyup
+    // handlers, so any rejection here would be unhandled. Log in dev for
+    // visibility but absorb the failure at this UI boundary.
+    Promise.resolve(this.activate(this.mediaState.value!, event)).catch((error) => {
+      if (__DEV__) console.error(`[${this.localName}]`, error);
+    });
   }
 
   /** Override to set the hotkey action name for `aria-keyshortcuts`. */
@@ -59,6 +79,7 @@ export abstract class MediaButtonElement<Core extends MediaButtonComponent> exte
   #disconnect: AbortController | null = null;
   #hotkeyRegistry: AriaKeyShortcutsController | null = null;
   #lastHotkeyShortcut: string | undefined;
+  readonly #i18n = new I18nController(this, i18nContext);
 
   override connectedCallback(): void {
     super.connectedCallback();
@@ -92,11 +113,19 @@ export abstract class MediaButtonElement<Core extends MediaButtonComponent> exte
 
   /** Returns the button's current label derived from media state. */
   getLabel(): string | undefined {
-    return this.core.state.current.label || undefined;
+    return this.core.state.current.label ? resolveText(this.core.state.current.label) : undefined;
   }
 
   getShortcut(): string | undefined {
     return this.#hotkeyRegistry?.shortcut;
+  }
+
+  /** Resolved label for tooltips and other display surfaces. */
+  getResolvedLabel(): string | undefined {
+    const media = this.mediaState.value;
+    if (!media) return undefined;
+    const state = this.core.getState() as InferComponentState<Core>;
+    return translateText(this.core.getLabel(state), this.#i18n.value, getLabelParams(this.core, state));
   }
 
   protected override willUpdate(changed: PropertyValues): void {
@@ -114,9 +143,13 @@ export abstract class MediaButtonElement<Core extends MediaButtonComponent> exte
     if (!media) return;
 
     this.core.setMedia(media);
-    const state = this.core.getState();
+    const state = this.core.getState() as InferComponentState<Core>;
+    const attrs = (this.core.getAttrs?.(state) ?? {}) as Record<string, unknown>;
+    if (isText(attrs['aria-label'])) {
+      attrs['aria-label'] = translateText(attrs['aria-label'], this.#i18n.value, getLabelParams(this.core, state));
+    }
     applyElementProps(this, {
-      ...this.core.getAttrs?.(state),
+      ...attrs,
       'aria-keyshortcuts': this.#hotkeyRegistry?.aria,
     });
     applyStateDataAttrs(this, state, this.stateAttrMap);

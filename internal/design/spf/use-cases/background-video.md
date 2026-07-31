@@ -107,7 +107,7 @@ use cases resolve via adapter choice.
 
 Phase 1 baseline:
 
-- **[`video-only-composition`](../features/video-only-composition.md)** — used at the *composition-mechanism* level; same audio-side subtraction pattern as the Case-1 feature, driven by adapter choice instead of source-shape detection. Plus further subtractions (text, ABR, preload).
+- **`video-only-composition`** — used at the *composition-mechanism* level; same audio-side subtraction pattern as the Case-1 feature, driven by adapter choice instead of source-shape detection. Plus further subtractions (text, ABR, preload).
 - **[`engine-adapter-integration`](../features/engine-adapter-integration.md)** — variant adapter parallels `SimpleHlsMediaElement` via the same `SimpleHlsMediaMixin` / `shareSignals` pattern.
 - **[`mse-mms-pipeline`](../features/mse-mms-pipeline.md)** — used as-is. Firefox `mozHasAudio=false` verification under subtractive-audio composition is **joint Phase 1 scope** with `video-only-mode-override` and the Case-1 `video-only-composition` feature.
 - **[`buffer-management`](../features/buffer-management.md)** — as-is in Phase 1; Phase 3 surfaces back-buffer tuning and loop-around forward-buffer fetching (the "loop-around buffer fetching" candidate in that feature's *What's not implemented* directly targets this use case).

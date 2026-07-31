@@ -1,9 +1,17 @@
+import type { MediaTimeState } from '@videojs/media';
 import { defaults } from '@videojs/utils/object';
-import { isFunction } from '@videojs/utils/predicate';
 import { formatTime, formatTimeAsPhrase, secondsToIsoDuration } from '@videojs/utils/time';
 import type { NonNullableObject } from '@videojs/utils/types';
-
-import type { MediaTimeState } from '../../media/state';
+import type { Text } from '../../i18n';
+import {
+  currentText,
+  durationText,
+  remainingText,
+  showDurationText,
+  showElapsedText,
+  showRemainingText,
+} from '../../i18n/text/time';
+import { resolveLabel } from '../utils/resolve-label';
 
 /** Time display type. */
 export type TimeType = 'current' | 'duration' | 'remaining';
@@ -14,7 +22,7 @@ export interface TimeProps {
   /** Symbol prepended to remaining time. */
   negativeSign?: string | undefined;
   /** Custom label for accessibility. */
-  label?: string | ((state: TimeState) => string) | undefined;
+  label?: Text | string | ((state: TimeState) => Text | string) | undefined;
   /** Whether the time display can be toggled. */
   toggle?: boolean | undefined;
 }
@@ -34,10 +42,16 @@ export interface TimeState {
   datetime: string;
 }
 
-const TOGGLE_LABELS: Record<TimeType, string> = {
-  current: 'Show elapsed time',
-  duration: 'Show duration',
-  remaining: 'Show remaining time',
+const TOGGLE_LABELS: Record<TimeType, Text> = {
+  current: showElapsedText,
+  duration: showDurationText,
+  remaining: showRemainingText,
+};
+
+const DEFAULT_LABELS: Record<TimeType, Text> = {
+  current: currentText,
+  duration: durationText,
+  remaining: remainingText,
 };
 
 export class TimeCore {
@@ -48,7 +62,7 @@ export class TimeCore {
     toggle: false,
   };
 
-  #props = { ...TimeCore.defaultProps };
+  #props: NonNullableObject<TimeProps> = { ...TimeCore.defaultProps };
   #media: MediaTimeState | null = null;
 
   constructor(props?: TimeProps) {
@@ -109,23 +123,21 @@ export class TimeCore {
     return currentType === 'duration' ? 'remaining' : 'duration';
   }
 
-  getLabel(state: TimeState, type = this.#props.type): string {
-    const { label } = this.#props;
-
-    if (isFunction(label)) {
-      const customLabel = label(state);
-      if (customLabel) return customLabel;
-    } else if (label) {
-      return label;
-    }
-
+  getLabel(state: TimeState, type = this.#props.type): Text | string {
+    const custom = resolveLabel(this.#props.label, state);
+    if (custom !== undefined) return custom;
     if (!this.#props.toggle) {
-      return state.phrase;
+      return DEFAULT_LABELS[this.#props.type];
     }
 
     const toggleType = this.#getToggleType(type, state.type);
 
-    return `${state.phrase}. ${TOGGLE_LABELS[toggleType]}.`;
+    return TOGGLE_LABELS[toggleType];
+  }
+
+  getLabelParams(state: TimeState): { duration: string } | undefined {
+    const custom = resolveLabel(this.#props.label, state);
+    return custom === undefined && this.#props.toggle ? { duration: state.phrase } : undefined;
   }
 
   getAttrs(state: TimeState, type = this.#props.type) {

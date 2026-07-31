@@ -1,5 +1,7 @@
+import { playbackRateText } from '@videojs/core/i18n/text/menu';
 import { cn } from '@videojs/utils/style';
 import { type ComponentProps, forwardRef, type ReactNode } from 'react';
+import { useTranslator } from '@/i18n/context';
 import {
   CheckIcon,
   PauseIcon,
@@ -11,7 +13,8 @@ import {
   VolumeLowIcon,
   VolumeOffIcon,
 } from '@/icons/minimal';
-import { Container, usePlayer } from '@/player/context';
+import { Container } from '@/player/container';
+import { usePlayer } from '@/player/context';
 import { BufferingIndicator } from '@/ui/buffering-indicator';
 import { ErrorDialog } from '@/ui/error-dialog';
 import { Hotkey } from '@/ui/hotkey';
@@ -73,13 +76,19 @@ function VolumePopover(): ReactNode {
 }
 
 function PlaybackRateRadioGroup(): ReactNode {
+  const t = useTranslator();
   const state = usePlaybackRateOptions();
   if (!state) return null;
 
   const { options, setValue, value } = state;
 
   return (
-    <Menu.RadioGroup className="media-menu__group" value={value} onValueChange={setValue} aria-label="Playback rate">
+    <Menu.RadioGroup
+      className="media-menu__group"
+      value={value}
+      onValueChange={setValue}
+      aria-label={t(playbackRateText)}
+    >
       {options.map((option) => (
         <Menu.RadioItem key={option.value} className="media-menu__item" value={option.value} disabled={option.disabled}>
           <span>{option.label}</span>
@@ -115,11 +124,11 @@ export function MinimalAudioSkin(props: MinimalAudioSkinProps): ReactNode {
         <ErrorDialog.Popup className="media-error">
           <div className="media-error__dialog">
             <div className="media-error__content">
-              <ErrorDialog.Title className="media-error__title">Something went wrong.</ErrorDialog.Title>
+              <ErrorDialog.Title className="media-error__title"></ErrorDialog.Title>
               <ErrorDialog.Description className="media-error__description" />
             </div>
             <div className="media-error__actions">
-              <ErrorDialog.Close className="media-button media-button--subtle">OK</ErrorDialog.Close>
+              <ErrorDialog.Close className="media-button media-button--subtle"></ErrorDialog.Close>
             </div>
           </div>
         </ErrorDialog.Popup>
@@ -208,14 +217,14 @@ export function MinimalAudioSkin(props: MinimalAudioSkinProps): ReactNode {
           </div>
 
           <div className="media-button-group">
+            <VolumePopover />
+
             <Menu.Root side="top" align="center" boundary="viewport">
               <PlaybackRateTrigger />
               <Menu.Content className="media-popover media-menu media-menu--playback-rate">
                 <PlaybackRateRadioGroup />
               </Menu.Content>
             </Menu.Root>
-
-            <VolumePopover />
           </div>
         </Tooltip.Provider>
       </div>
@@ -237,7 +246,7 @@ export function MinimalAudioSkin(props: MinimalAudioSkinProps): ReactNode {
       <Hotkey keys="<" action="speedDown" />
 
       {/* Input Feedback */}
-      <StatusAnnouncer />
+      <StatusAnnouncer className="media-sr-only" />
     </Container>
   );
 }

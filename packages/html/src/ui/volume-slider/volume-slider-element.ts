@@ -9,10 +9,13 @@ import {
   type SliderApi,
   selectVolume,
 } from '@videojs/core/dom';
+import { type Text, translateText } from '@videojs/core/i18n';
 import type { PropertyDeclarationMap, PropertyValues } from '@videojs/element';
 import { ContextProvider } from '@videojs/element/context';
 import { applyStyles, isRTL } from '@videojs/utils/dom';
 
+import { i18nContext } from '../../i18n/context';
+import { I18nController } from '../../i18n/controller';
 import { playerContext } from '../../player/context';
 import { PlayerController } from '../../player/player-controller';
 import { MediaElement } from '../media-element';
@@ -31,7 +34,7 @@ export class VolumeSliderElement extends MediaElement {
     thumbAlignment: { type: String, attribute: 'thumb-alignment' },
   } satisfies PropertyDeclarationMap<Exclude<keyof VolumeSliderCore.Props, 'value' | 'min' | 'max'>>;
 
-  label = VolumeSliderCore.defaultProps.label;
+  label: Text | string = '';
   step = VolumeSliderCore.defaultProps.step;
   largeStep = VolumeSliderCore.defaultProps.largeStep;
   wheelStep = VolumeSliderCore.defaultProps.wheelStep;
@@ -42,6 +45,7 @@ export class VolumeSliderElement extends MediaElement {
   readonly #core = new VolumeSliderCore();
   readonly #provider = new ContextProvider(this, { context: sliderContext });
   readonly #volumeState = new PlayerController(this, playerContext, selectVolume);
+  readonly #i18n = new I18nController(this, i18nContext);
 
   #slider: SliderApi | null = null;
   #disconnect: AbortController | null = null;
@@ -110,6 +114,7 @@ export class VolumeSliderElement extends MediaElement {
   protected override willUpdate(_changed: PropertyValues): void {
     super.willUpdate(_changed);
     this.#core.setProps(this);
+    this.#core.setFormatLocale(this.#i18n.locale);
   }
 
   protected override update(_changed: PropertyValues): void {
@@ -124,6 +129,7 @@ export class VolumeSliderElement extends MediaElement {
     const state = this.#core.getState();
 
     const cssVars = getSliderCSSVars(this.#slider.adjustForAlignment(state));
+    const thumbAttrs = this.#core.getAttrs(state);
 
     applyStyles(this, cssVars);
 
@@ -135,7 +141,15 @@ export class VolumeSliderElement extends MediaElement {
       state,
       stateAttrMap: VolumeSliderDataAttrs,
       pointerValue: this.#core.valueFromPercent(state.pointerPercent),
-      thumbAttrs: this.#core.getAttrs(state),
+      thumbAttrs: {
+        ...thumbAttrs,
+        'aria-label': translateText(thumbAttrs['aria-label'], this.#i18n.value),
+        'aria-valuetext': translateText(
+          thumbAttrs['aria-valuetext'],
+          this.#i18n.value,
+          this.#core.getValueTextParams(state)
+        ),
+      },
       thumbProps: this.#slider.thumbProps,
       formatValue: (value) => `${Math.round(value)}%`,
     });

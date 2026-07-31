@@ -1,4 +1,12 @@
 import {
+  audioText,
+  captionsText,
+  playbackRateText,
+  qualityText,
+  settingsText,
+  speedText,
+} from '@videojs/core/i18n/text/menu';
+import {
   badge,
   bufferingIndicator,
   button,
@@ -7,7 +15,6 @@ import {
   controls,
   error,
   icon,
-  iconContainer,
   iconFlipped,
   iconState,
   inputFeedback,
@@ -16,7 +23,6 @@ import {
   popup,
   poster,
   root,
-  seek,
   slider,
   thumbnail,
   time,
@@ -24,6 +30,7 @@ import {
 import { isString } from '@videojs/utils/predicate';
 import { cn } from '@videojs/utils/style';
 import { type ComponentProps, type CSSProperties, forwardRef, type ReactNode } from 'react';
+import { useTranslator } from '@/i18n/context';
 import {
   AirPlayEnterIcon,
   AirPlayExitIcon,
@@ -42,7 +49,6 @@ import {
   PlayIcon,
   QualityIcon,
   RestartIcon,
-  SeekIcon,
   SpeechIcon,
   SpeedIcon,
   SpinnerIcon,
@@ -50,10 +56,12 @@ import {
   VolumeLowIcon,
   VolumeOffIcon,
 } from '@/icons/minimal';
-import { Container, usePlayer } from '@/player/context';
+import { Container } from '@/player/container';
+import { usePlayer } from '@/player/context';
 import { AirPlayButton } from '@/ui/airplay-button';
 import { useAudioTrackOptions } from '@/ui/audio-track';
 import { BufferingIndicator } from '@/ui/buffering-indicator';
+import { CaptionsButton } from '@/ui/captions-button';
 import { useCaptionsOptions } from '@/ui/captions-radio-group';
 import { CastButton } from '@/ui/cast-button';
 import { Controls } from '@/ui/controls';
@@ -69,7 +77,6 @@ import { usePlaybackRateOptions } from '@/ui/playback-rate';
 import { Popover } from '@/ui/popover';
 import { Poster } from '@/ui/poster';
 import { useQualityOptions } from '@/ui/quality';
-import { SeekButton } from '@/ui/seek-button';
 import { SeekIndicator } from '@/ui/seek-indicator';
 import { Slider } from '@/ui/slider';
 import { StatusAnnouncer } from '@/ui/status-announcer';
@@ -149,10 +156,10 @@ function VolumePopover(): ReactNode {
   if (volumeUnsupported) return muteButton;
 
   return (
-    <Popover.Root openOnHover delay={200} closeDelay={100} side="top">
+    <Popover.Root openOnHover delay={200} closeDelay={100} side="right">
       <Popover.Trigger render={muteButton} />
-      <Popover.Popup className={cn(popup.volume)}>
-        <VolumeSlider.Root orientation="vertical" thumbAlignment="edge" render={<SliderRoot />}>
+      <Popover.Popup className={popup.volume}>
+        <VolumeSlider.Root orientation="horizontal" thumbAlignment="edge" render={<SliderRoot />}>
           <VolumeSlider.Track render={<SliderTrack />}>
             <VolumeSlider.Fill render={<SliderFill />} />
           </VolumeSlider.Track>
@@ -168,6 +175,7 @@ function MenuChevron({ flipped = false }: { flipped?: boolean }): ReactNode {
 }
 
 function SettingsMenu(): ReactNode {
+  const t = useTranslator();
   const playbackRate = usePlaybackRateOptions();
   const quality = useQualityOptions();
   const audioTrack = useAudioTrackOptions();
@@ -181,11 +189,7 @@ function SettingsMenu(): ReactNode {
 
   return (
     <Menu.Root side="top" align="center">
-      <Menu.Trigger
-        aria-label="Settings"
-        className="media-button--settings"
-        render={<Button className={cn(button.icon, menu.settingsTrigger)} />}
-      >
+      <Menu.Trigger aria-label={t(settingsText)} render={<Button className={cn(button.icon, menu.settingsTrigger)} />}>
         <GearIcon className={cn(icon, menu.settingsIcon)} />
       </Menu.Trigger>
       <Menu.Content className={menu.settings}>
@@ -195,11 +199,11 @@ function SettingsMenu(): ReactNode {
               <Menu.Root>
                 <Menu.Trigger
                   type="quality"
-                  className={cn(menu.item, 'media-menu__item--submenu')}
+                  className={menu.item}
                   render={(props) => (
                     <div {...props}>
                       <QualityIcon className={cn(icon, menu.icon)} />
-                      <span>Quality</span>
+                      <span>{t(qualityText)}</span>
                       <span className={menu.hint}>
                         <Menu.ItemValue className={menu.hintLabel} />
                         <MenuChevron />
@@ -210,14 +214,14 @@ function SettingsMenu(): ReactNode {
                 <Menu.Content className={menu.submenuPanel}>
                   <Menu.Back className={menu.back}>
                     <MenuChevron flipped />
-                    Quality
+                    {t(qualityText)}
                   </Menu.Back>
                   <Menu.Separator className={menu.separator} />
                   <Menu.RadioGroup
                     className={menu.group}
                     value={quality.value}
                     onValueChange={quality.setValue}
-                    aria-label="Quality"
+                    aria-label={t(qualityText)}
                   >
                     {quality.options.map((option) => (
                       <Menu.RadioItem
@@ -249,11 +253,11 @@ function SettingsMenu(): ReactNode {
               <Menu.Root>
                 <Menu.Trigger
                   type="audio-track"
-                  className={cn(menu.item, 'media-menu__item--submenu')}
+                  className={menu.item}
                   render={(props) => (
                     <div {...props}>
                       <SpeechIcon className={icon} />
-                      <span>Audio</span>
+                      <span>{t(audioText)}</span>
                       <span className={menu.hint}>
                         <Menu.ItemValue className={menu.hintLabel} />
                         <MenuChevron />
@@ -264,14 +268,14 @@ function SettingsMenu(): ReactNode {
                 <Menu.Content className={menu.submenuPanel}>
                   <Menu.Back className={menu.back}>
                     <MenuChevron flipped />
-                    Audio
+                    {t(audioText)}
                   </Menu.Back>
                   <Menu.Separator className={menu.separator} />
                   <Menu.RadioGroup
                     className={menu.group}
                     value={audioTrack.value}
                     onValueChange={audioTrack.setValue}
-                    aria-label="Audio tracks"
+                    aria-label={t(audioText)}
                   >
                     {audioTrack.options.map((option) => (
                       <Menu.RadioItem
@@ -299,11 +303,11 @@ function SettingsMenu(): ReactNode {
               <Menu.Root>
                 <Menu.Trigger
                   type="playback-rate"
-                  className={cn(menu.item, 'media-menu__item--submenu')}
+                  className={menu.item}
                   render={(props) => (
                     <div {...props}>
                       <SpeedIcon className={cn(icon, menu.icon)} />
-                      <span>Speed</span>
+                      <span>{t(speedText)}</span>
                       <span className={menu.hint}>
                         <Menu.ItemValue className={menu.hintLabel} />
                         <MenuChevron />
@@ -314,14 +318,14 @@ function SettingsMenu(): ReactNode {
                 <Menu.Content className={menu.submenuPanel}>
                   <Menu.Back className={menu.back}>
                     <MenuChevron flipped />
-                    Speed
+                    {t(speedText)}
                   </Menu.Back>
                   <Menu.Separator className={menu.separator} />
                   <Menu.RadioGroup
                     className={menu.group}
                     value={playbackRate.value}
                     onValueChange={playbackRate.setValue}
-                    aria-label="Playback rate"
+                    aria-label={t(playbackRateText)}
                   >
                     {playbackRate.options.map((option) => (
                       <Menu.RadioItem
@@ -349,11 +353,11 @@ function SettingsMenu(): ReactNode {
               <Menu.Root>
                 <Menu.Trigger
                   type="captions"
-                  className={cn(menu.item, 'media-menu__item--submenu')}
+                  className={menu.item}
                   render={(props) => (
                     <div {...props}>
                       <CaptionsOffIcon className={cn(icon, menu.icon)} />
-                      <span>Captions</span>
+                      <span>{t(captionsText)}</span>
                       <span className={menu.hint}>
                         <Menu.ItemValue className={menu.hintLabel} />
                         <MenuChevron />
@@ -364,14 +368,14 @@ function SettingsMenu(): ReactNode {
                 <Menu.Content className={menu.submenuPanel}>
                   <Menu.Back className={menu.back}>
                     <MenuChevron flipped />
-                    Captions
+                    {t(captionsText)}
                   </Menu.Back>
                   <Menu.Separator className={menu.separator} />
                   <Menu.RadioGroup
                     className={menu.group}
                     value={captions.value}
                     onValueChange={captions.setValue}
-                    aria-label="Captions"
+                    aria-label={t(captionsText)}
                   >
                     {captions.options.map((option) => (
                       <Menu.RadioItem
@@ -434,11 +438,11 @@ export function MinimalVideoSkinTailwind(props: MinimalVideoSkinProps): ReactNod
         <ErrorDialog.Popup className={error.root}>
           <div className={error.dialog}>
             <div className={error.content}>
-              <ErrorDialog.Title className={error.title}>Something went wrong.</ErrorDialog.Title>
+              <ErrorDialog.Title className={error.title}></ErrorDialog.Title>
               <ErrorDialog.Description className={error.description} />
             </div>
             <div className={error.actions}>
-              <ErrorDialog.Close className={cn(button.base, button.primary)}>OK</ErrorDialog.Close>
+              <ErrorDialog.Close className={cn(button.base, button.primary)}></ErrorDialog.Close>
             </div>
           </div>
         </ErrorDialog.Popup>
@@ -466,39 +470,7 @@ export function MinimalVideoSkinTailwind(props: MinimalVideoSkinProps): ReactNod
               </Tooltip.Popup>
             </Tooltip.Root>
 
-            <Tooltip.Root side="top">
-              <Tooltip.Trigger
-                render={
-                  <SeekButton seconds={-SEEK_TIME} render={<Button />}>
-                    <span className={iconContainer}>
-                      <SeekIcon className={cn(icon, iconFlipped)} />
-                      <span className={cn(seek.label, seek.labelBackward)}>{SEEK_TIME}</span>
-                    </span>
-                  </SeekButton>
-                }
-              />
-              <Tooltip.Popup className={cn(popup.tooltip)}>
-                <Tooltip.Label />
-                <Tooltip.Shortcut className={popup.tooltipShortcut} />
-              </Tooltip.Popup>
-            </Tooltip.Root>
-
-            <Tooltip.Root side="top">
-              <Tooltip.Trigger
-                render={
-                  <SeekButton seconds={SEEK_TIME} render={<Button />}>
-                    <span className={iconContainer}>
-                      <SeekIcon className={icon} />
-                      <span className={cn(seek.label, seek.labelForward)}>{SEEK_TIME}</span>
-                    </span>
-                  </SeekButton>
-                }
-              />
-              <Tooltip.Popup className={cn(popup.tooltip)}>
-                <Tooltip.Label />
-                <Tooltip.Shortcut className={popup.tooltipShortcut} />
-              </Tooltip.Popup>
-            </Tooltip.Root>
+            <VolumePopover />
           </div>
 
           <div className={time.controls}>
@@ -528,7 +500,20 @@ export function MinimalVideoSkinTailwind(props: MinimalVideoSkinProps): ReactNod
           </div>
 
           <div className={cn(buttonGroupEnd, menu.settingsGroup)}>
-            <VolumePopover />
+            <Tooltip.Root side="top">
+              <Tooltip.Trigger
+                render={
+                  <CaptionsButton className={iconState.captions.button} render={<Button />}>
+                    <CaptionsOffIcon className={cn(icon, iconState.captions.off)} />
+                    <CaptionsOnIcon className={cn(icon, iconState.captions.on)} />
+                  </CaptionsButton>
+                }
+              />
+              <Tooltip.Popup className={cn(popup.tooltip)}>
+                <Tooltip.Label />
+                <Tooltip.Shortcut className={popup.tooltipShortcut} />
+              </Tooltip.Popup>
+            </Tooltip.Root>
 
             <SettingsMenu />
 
@@ -624,7 +609,7 @@ export function MinimalVideoSkinTailwind(props: MinimalVideoSkinProps): ReactNod
       <Gesture type="doubletap" action="seekStep" value={SEEK_TIME} region="right" />
 
       {/* Input Feedback */}
-      <StatusAnnouncer />
+      <StatusAnnouncer className="sr-only" />
       <div className={inputFeedback.root}>
         <VolumeIndicator.Root
           className={cn(inputFeedback.island.base, inputFeedback.island.volume, inputFeedback.island.shownVolume)}

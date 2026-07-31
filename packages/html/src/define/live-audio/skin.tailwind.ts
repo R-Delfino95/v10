@@ -10,6 +10,7 @@ import {
   popup,
   root,
   slider,
+  spacer,
 } from '@videojs/skins/default/tailwind/audio.tailwind';
 import { createTemplate } from '@videojs/utils/dom';
 import { cn } from '@videojs/utils/style';
@@ -29,11 +30,11 @@ function getTemplateHTML() {
       <media-error-dialog class="${error.root}">
         <div class="${error.dialog}">
           <div class="${error.content}">
-            <media-alert-dialog-title class="${error.title}">Something went wrong.</media-alert-dialog-title>
+            <media-alert-dialog-title class="${error.title}"></media-alert-dialog-title>
             <media-alert-dialog-description class="${error.description}"></media-alert-dialog-description>
           </div>
           <div class="${error.actions}">
-            <media-alert-dialog-close class="${cn(button.base, button.subtle)}">OK</media-alert-dialog-close>
+            <media-alert-dialog-close class="${cn(button.base, button.subtle)}"></media-alert-dialog-close>
           </div>
         </div>
       </media-error-dialog>
@@ -59,7 +60,7 @@ function getTemplateHTML() {
               <media-live-button class="${cn(button.base, button.subtle, button.live)}"></media-live-button>
           </div>
 
-          <div class="grow" aria-hidden="true"></div>
+          <div class="${spacer}" aria-hidden="true"></div>
 
           <div class="${buttonGroup}">
             <media-mute-button commandfor="live-audio-volume-popover" class="${cn(button.base, button.subtle, button.icon, iconState.mute.button)}">

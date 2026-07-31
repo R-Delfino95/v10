@@ -1,6 +1,15 @@
+import {
+  audioText,
+  captionsText,
+  playbackRateText,
+  qualityText,
+  settingsText,
+  speedText,
+} from '@videojs/core/i18n/text/menu';
 import { isString } from '@videojs/utils/predicate';
 import { cn } from '@videojs/utils/style';
 import { type ComponentProps, type CSSProperties, forwardRef, type ReactNode } from 'react';
+import { useTranslator } from '@/i18n/context';
 import {
   AirPlayEnterIcon,
   AirPlayExitIcon,
@@ -19,7 +28,6 @@ import {
   PlayIcon,
   QualityIcon,
   RestartIcon,
-  SeekIcon,
   SpeechIcon,
   SpeedIcon,
   SpinnerIcon,
@@ -27,10 +35,12 @@ import {
   VolumeLowIcon,
   VolumeOffIcon,
 } from '@/icons/minimal';
-import { Container, usePlayer } from '@/player/context';
+import { Container } from '@/player/container';
+import { usePlayer } from '@/player/context';
 import { AirPlayButton } from '@/ui/airplay-button';
 import { useAudioTrackOptions } from '@/ui/audio-track';
 import { BufferingIndicator } from '@/ui/buffering-indicator';
+import { CaptionsButton } from '@/ui/captions-button';
 import { useCaptionsOptions } from '@/ui/captions-radio-group';
 import { CastButton } from '@/ui/cast-button';
 import { Controls } from '@/ui/controls';
@@ -46,7 +56,6 @@ import { usePlaybackRateOptions } from '@/ui/playback-rate';
 import { Popover } from '@/ui/popover';
 import { Poster } from '@/ui/poster';
 import { useQualityOptions } from '@/ui/quality';
-import { SeekButton } from '@/ui/seek-button';
 import { SeekIndicator } from '@/ui/seek-indicator';
 import { Slider } from '@/ui/slider';
 import { StatusAnnouncer } from '@/ui/status-announcer';
@@ -90,10 +99,10 @@ function VolumePopover(): ReactNode {
   if (volumeUnsupported) return muteButton;
 
   return (
-    <Popover.Root openOnHover delay={200} closeDelay={100} side="top">
+    <Popover.Root openOnHover delay={200} closeDelay={100} side="right">
       <Popover.Trigger render={muteButton} />
       <Popover.Popup className="media-popover media-popover--volume">
-        <VolumeSlider.Root className="media-slider" orientation="vertical" thumbAlignment="edge">
+        <VolumeSlider.Root className="media-slider" orientation="horizontal" thumbAlignment="edge">
           <VolumeSlider.Track className="media-slider__track">
             <VolumeSlider.Fill className="media-slider__fill" />
           </VolumeSlider.Track>
@@ -109,6 +118,7 @@ function MenuChevron({ flipped = false }: { flipped?: boolean }): ReactNode {
 }
 
 function SettingsMenu(): ReactNode {
+  const t = useTranslator();
   const playbackRate = usePlaybackRateOptions();
   const quality = useQualityOptions();
   const audioTrack = useAudioTrackOptions();
@@ -122,7 +132,7 @@ function SettingsMenu(): ReactNode {
 
   return (
     <Menu.Root side="top" align="center">
-      <Menu.Trigger aria-label="Settings" className="media-button--settings" render={<Button />}>
+      <Menu.Trigger aria-label={t(settingsText)} className="media-button--settings" render={<Button />}>
         <GearIcon className="media-icon media-icon--settings" />
       </Menu.Trigger>
       <Menu.Content className="media-popover media-menu media-menu--settings">
@@ -136,7 +146,7 @@ function SettingsMenu(): ReactNode {
                   render={(props) => (
                     <div {...props}>
                       <QualityIcon className="media-icon" />
-                      <span>Quality</span>
+                      <span>{t(qualityText)}</span>
                       <span className="media-menu__hint">
                         <Menu.ItemValue className="media-menu__hint-label" />
                         <MenuChevron />
@@ -147,14 +157,14 @@ function SettingsMenu(): ReactNode {
                 <Menu.Content className="media-menu__panel">
                   <Menu.Back className="media-menu__back">
                     <MenuChevron flipped />
-                    Quality
+                    {t(qualityText)}
                   </Menu.Back>
                   <Menu.Separator className="media-menu__separator" />
                   <Menu.RadioGroup
                     className="media-menu__group"
                     value={quality.value}
                     onValueChange={quality.setValue}
-                    aria-label="Quality"
+                    aria-label={t(qualityText)}
                   >
                     {quality.options.map((option) => (
                       <Menu.RadioItem
@@ -190,7 +200,7 @@ function SettingsMenu(): ReactNode {
                   render={(props) => (
                     <div {...props}>
                       <SpeechIcon className="media-icon" />
-                      <span>Audio</span>
+                      <span>{t(audioText)}</span>
                       <span className="media-menu__hint">
                         <Menu.ItemValue className="media-menu__hint-label" />
                         <MenuChevron />
@@ -201,14 +211,14 @@ function SettingsMenu(): ReactNode {
                 <Menu.Content className="media-menu__panel">
                   <Menu.Back className="media-menu__back">
                     <MenuChevron flipped />
-                    Audio
+                    {t(audioText)}
                   </Menu.Back>
                   <Menu.Separator className="media-menu__separator" />
                   <Menu.RadioGroup
                     className="media-menu__group"
                     value={audioTrack.value}
                     onValueChange={audioTrack.setValue}
-                    aria-label="Audio tracks"
+                    aria-label={t(audioText)}
                   >
                     {audioTrack.options.map((option) => (
                       <Menu.RadioItem
@@ -240,7 +250,7 @@ function SettingsMenu(): ReactNode {
                   render={(props) => (
                     <div {...props}>
                       <SpeedIcon className="media-icon" />
-                      <span>Speed</span>
+                      <span>{t(speedText)}</span>
                       <span className="media-menu__hint">
                         <Menu.ItemValue className="media-menu__hint-label" />
                         <MenuChevron />
@@ -251,14 +261,14 @@ function SettingsMenu(): ReactNode {
                 <Menu.Content className="media-menu__panel">
                   <Menu.Back className="media-menu__back">
                     <MenuChevron flipped />
-                    Speed
+                    {t(speedText)}
                   </Menu.Back>
                   <Menu.Separator className="media-menu__separator" />
                   <Menu.RadioGroup
                     className="media-menu__group"
                     value={playbackRate.value}
                     onValueChange={playbackRate.setValue}
-                    aria-label="Playback rate"
+                    aria-label={t(playbackRateText)}
                   >
                     {playbackRate.options.map((option) => (
                       <Menu.RadioItem
@@ -290,7 +300,7 @@ function SettingsMenu(): ReactNode {
                   render={(props) => (
                     <div {...props}>
                       <CaptionsOffIcon className="media-icon" />
-                      <span>Captions</span>
+                      <span>{t(captionsText)}</span>
                       <span className="media-menu__hint">
                         <Menu.ItemValue className="media-menu__hint-label" />
                         <MenuChevron />
@@ -301,14 +311,14 @@ function SettingsMenu(): ReactNode {
                 <Menu.Content className="media-menu__panel">
                   <Menu.Back className="media-menu__back">
                     <MenuChevron flipped />
-                    Captions
+                    {t(captionsText)}
                   </Menu.Back>
                   <Menu.Separator className="media-menu__separator" />
                   <Menu.RadioGroup
                     className="media-menu__group"
                     value={captions.value}
                     onValueChange={captions.setValue}
-                    aria-label="Captions"
+                    aria-label={t(captionsText)}
                   >
                     {captions.options.map((option) => (
                       <Menu.RadioItem
@@ -369,11 +379,11 @@ export function MinimalVideoSkin(props: MinimalVideoSkinProps): ReactNode {
         <ErrorDialog.Popup className="media-error">
           <div className="media-error__dialog">
             <div className="media-error__content">
-              <ErrorDialog.Title className="media-error__title">Something went wrong.</ErrorDialog.Title>
+              <ErrorDialog.Title className="media-error__title"></ErrorDialog.Title>
               <ErrorDialog.Description className="media-error__description" />
             </div>
             <div className="media-error__actions">
-              <ErrorDialog.Close className="media-button media-button--primary">OK</ErrorDialog.Close>
+              <ErrorDialog.Close className="media-button media-button--primary"></ErrorDialog.Close>
             </div>
           </div>
         </ErrorDialog.Popup>
@@ -398,39 +408,7 @@ export function MinimalVideoSkin(props: MinimalVideoSkinProps): ReactNode {
               </Tooltip.Popup>
             </Tooltip.Root>
 
-            <Tooltip.Root side="top">
-              <Tooltip.Trigger
-                render={
-                  <SeekButton seconds={-SEEK_TIME} className="media-button--seek" render={<Button />}>
-                    <span className="media-icon__container">
-                      <SeekIcon className="media-icon media-icon--seek media-icon--flipped" />
-                      <span className="media-icon__label">{SEEK_TIME}</span>
-                    </span>
-                  </SeekButton>
-                }
-              />
-              <Tooltip.Popup className="media-tooltip">
-                <Tooltip.Label />
-                <Tooltip.Shortcut className="media-tooltip__kbd" />
-              </Tooltip.Popup>
-            </Tooltip.Root>
-
-            <Tooltip.Root side="top">
-              <Tooltip.Trigger
-                render={
-                  <SeekButton seconds={SEEK_TIME} className="media-button--seek" render={<Button />}>
-                    <span className="media-icon__container">
-                      <SeekIcon className="media-icon media-icon--seek" />
-                      <span className="media-icon__label">{SEEK_TIME}</span>
-                    </span>
-                  </SeekButton>
-                }
-              />
-              <Tooltip.Popup className="media-tooltip">
-                <Tooltip.Label />
-                <Tooltip.Shortcut className="media-tooltip__kbd" />
-              </Tooltip.Popup>
-            </Tooltip.Root>
+            <VolumePopover />
           </div>
 
           <div className="media-time-controls">
@@ -454,6 +432,7 @@ export function MinimalVideoSkin(props: MinimalVideoSkinProps): ReactNode {
                 <TimeSlider.Value type="pointer" className="media-time media-thumbnail__time" />
                 <SpinnerIcon className="media-thumbnail__spinner media-icon" />
               </div>
+
               <TimeSlider.Preview className="media-slider__preview">
                 <TimeSlider.Value type="pointer" className="media-time media-slider__value" />
               </TimeSlider.Preview>
@@ -461,7 +440,20 @@ export function MinimalVideoSkin(props: MinimalVideoSkinProps): ReactNode {
           </div>
 
           <div className="media-button-group">
-            <VolumePopover />
+            <Tooltip.Root side="top">
+              <Tooltip.Trigger
+                render={
+                  <CaptionsButton className="media-button--captions" render={<Button />}>
+                    <CaptionsOffIcon className="media-icon media-icon--captions-off" />
+                    <CaptionsOnIcon className="media-icon media-icon--captions-on" />
+                  </CaptionsButton>
+                }
+              />
+              <Tooltip.Popup className="media-tooltip">
+                <Tooltip.Label />
+                <Tooltip.Shortcut className="media-tooltip__kbd" />
+              </Tooltip.Popup>
+            </Tooltip.Root>
 
             <SettingsMenu />
 
@@ -557,7 +549,7 @@ export function MinimalVideoSkin(props: MinimalVideoSkinProps): ReactNode {
       <Gesture type="doubletap" action="seekStep" value={SEEK_TIME} region="right" />
 
       {/* Input Feedback */}
-      <StatusAnnouncer />
+      <StatusAnnouncer className="media-sr-only" />
       <div className="media-input-feedback">
         <VolumeIndicator.Root className="media-input-feedback-island media-input-feedback-island--volume">
           <VolumeIndicator.Fill className="media-input-feedback-island__content">

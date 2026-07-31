@@ -1,5 +1,6 @@
 import '@app/styles.css';
 import { AudioProvider } from '@app/shared/react/providers';
+import { SandboxI18nProvider } from '@app/shared/react/sandbox-i18n';
 import { AudioSkinComponent } from '@app/shared/react/skins';
 import { useAutoplay } from '@app/shared/react/use-autoplay';
 import { useLoop } from '@app/shared/react/use-loop';
@@ -9,7 +10,9 @@ import { useSkin } from '@app/shared/react/use-skin';
 import { useSource } from '@app/shared/react/use-source';
 import { SOURCES } from '@app/shared/sources';
 import type { Styling } from '@app/types';
+import { GoogleCast } from '@videojs/react/media/google-cast';
 import { MuxAudio } from '@videojs/react/media/mux-audio';
+import { MuxData } from '@videojs/react/media/mux-data';
 import { useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 
@@ -27,18 +30,23 @@ function App() {
   const preload = usePreload();
 
   return (
-    <AudioProvider>
-      <AudioSkinComponent skin={skin} styling={styling} className="w-full max-w-xl mx-auto">
-        <MuxAudio
-          src={SOURCES[source].url}
-          autoPlay={autoplay}
-          muted={muted}
-          loop={loop}
-          preload={preload}
-          crossOrigin="anonymous"
-        />
-      </AudioSkinComponent>
-    </AudioProvider>
+    <SandboxI18nProvider>
+      <AudioProvider>
+        <AudioSkinComponent skin={skin} styling={styling} className="w-full max-w-xl mx-auto">
+          <MuxAudio
+            src={SOURCES[source].url}
+            autoPlay={autoplay}
+            muted={muted}
+            loop={loop}
+            preload={preload}
+            crossOrigin="anonymous"
+          />
+          {/* Mux Data and Cast are opt-in media components; no env key is needed for Mux-hosted sources. */}
+          <MuxData playerSoftwareName="mux-audio" />
+          <GoogleCast />
+        </AudioSkinComponent>
+      </AudioProvider>
+    </SandboxI18nProvider>
   );
 }
 

@@ -2,8 +2,11 @@
 
 import { CAPTIONS_OFF_VALUE, CaptionsRadioGroupCore } from '@videojs/core';
 import { logMissingFeature, selectTextTrack } from '@videojs/core/dom';
+import { translateText } from '@videojs/core/i18n';
+import { offText } from '@videojs/core/i18n/text/menu';
 import { useCallback, useState } from 'react';
 
+import { useTranslator } from '../../i18n/context';
 import { usePlayer } from '../../player/context';
 
 export interface CaptionsOptionsProps extends CaptionsRadioGroupCore.Props {}
@@ -23,10 +26,18 @@ export interface CaptionsOptionsResult {
   setValue: (value: string) => void;
 }
 
+/**
+ * Create captions menu options (including an `Off` option) from the player
+ * text track state. Returns `null` when the text tracks feature is not
+ * configured.
+ *
+ * @param props - Optional `label`, `formatTrack`, and `disabled` overrides.
+ */
 export function useCaptionsOptions(props?: CaptionsOptionsProps): CaptionsOptionsResult | null {
   'use no memo';
 
   const media = usePlayer(selectTextTrack);
+  const t = useTranslator();
   const [core] = useState(() => new CaptionsRadioGroupCore());
 
   core.setProps(props ?? {});
@@ -48,12 +59,12 @@ export function useCaptionsOptions(props?: CaptionsOptionsProps): CaptionsOption
     options: [
       {
         value: CAPTIONS_OFF_VALUE,
-        label: 'Off',
+        label: translateText(offText, t),
         disabled: state.disabled,
       },
       ...state.tracks.map((track) => ({
         value: track.value,
-        label: track.label,
+        label: translateText(track.label, t),
         disabled: state.disabled,
       })),
     ],

@@ -4,15 +4,60 @@ export type { IndicatorStatus, InputAction, InputIndicatorLabels } from '@videoj
 // Core
 export * from '@videojs/core/dom';
 // Media predicates
-export * from '@videojs/core/media/predicate';
+export {
+  hasMetadata,
+  isMediaAudioTrackCapable,
+  isMediaBufferCapable,
+  isMediaErrorCapable,
+  isMediaLiveCapable,
+  isMediaPauseCapable,
+  isMediaPlaybackRateCapable,
+  isMediaRemotePlaybackCapable,
+  isMediaSeekCapable,
+  isMediaSourceCapable,
+  isMediaStreamTypeCapable,
+  isMediaTextTrackCapable,
+  isMediaVideoDimensionsCapable,
+  isMediaVideoRenditionCapable,
+  isMediaVolumeCapable,
+  isQuerySelectorAllCapable,
+  type NodeListLike,
+} from '@videojs/media';
+// Media
+export * from '@videojs/media/dom';
 // Store
 export type { Comparator, Selector } from '@videojs/store';
 export { createSelector, shallowEqual } from '@videojs/store';
 export { useSelector, useStore } from '@videojs/store/react';
+// i18n
+export {
+  type CreateI18nOptions,
+  type CreateI18nResult,
+  createI18n,
+  createTranslator,
+  type FlatTranslations,
+  findLocaleKeys,
+  getI18nTranslations,
+  hasRegisteredLocale,
+  I18nContext,
+  type I18nContextValue,
+  I18nProvider,
+  type I18nProviderProps,
+  type Locale,
+  onI18nRegistryChange,
+  registerI18n,
+  type TranslationParams,
+  type Translations,
+  type Translator,
+  useLocale,
+  useTranslator,
+} from './i18n';
 // Media primitives
 export {
   Container,
   type ContainerProps,
+} from './player/container';
+export {
   type PlayerContextValue,
   useContainer,
   useContainerAttach,
@@ -109,10 +154,10 @@ export { VolumeSlider } from './ui/volume-slider';
 // Utilities
 export { mergeProps } from './utils/merge-props';
 export type { HTMLProps, RenderFunction, RenderProp, UIComponentProps } from './utils/types';
-// Media utilities
 export { useAttachMedia } from './utils/use-attach-media';
 export { composeRefs, useComposedRefs } from './utils/use-composed-refs';
 export { useDestroy } from './utils/use-destroy';
 export { useLatestRef } from './utils/use-latest-ref';
+export { useMediaComponent } from './utils/use-media-component';
 export { useMediaInstance } from './utils/use-media-instance';
 export { renderElement } from './utils/use-render';

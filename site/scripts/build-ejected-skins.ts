@@ -54,7 +54,6 @@ interface HtmlSkinDef {
   template: string;
   css?: string;
   iconSet: 'default' | 'minimal';
-  tailwindModule?: string;
 }
 
 interface ReactSkinDef {
@@ -79,8 +78,8 @@ interface EjectedSkinEntry {
   platform: 'html' | 'react';
   style: 'css' | 'tailwind';
   html?: string;
-  tsx?: string;
-  jsx?: string;
+  tsx?: Record<string, string>;
+  jsx?: Record<string, string>;
   css?: string;
 }
 
@@ -567,7 +566,6 @@ const SKINS: SkinDef[] = [
     style: 'tailwind',
     template: 'packages/html/src/define/video/skin.tailwind.ts',
     iconSet: 'default',
-    tailwindModule: '@videojs/skins/default/tailwind/video.tailwind',
   },
   {
     id: 'default-audio-tailwind',
@@ -576,7 +574,6 @@ const SKINS: SkinDef[] = [
     style: 'tailwind',
     template: 'packages/html/src/define/audio/skin.tailwind.ts',
     iconSet: 'default',
-    tailwindModule: '@videojs/skins/default/tailwind/audio.tailwind',
   },
   {
     id: 'minimal-video-tailwind',
@@ -585,7 +582,6 @@ const SKINS: SkinDef[] = [
     style: 'tailwind',
     template: 'packages/html/src/define/video/minimal-skin.tailwind.ts',
     iconSet: 'minimal',
-    tailwindModule: '@videojs/skins/minimal/tailwind/video.tailwind',
   },
   {
     id: 'minimal-audio-tailwind',
@@ -594,7 +590,6 @@ const SKINS: SkinDef[] = [
     style: 'tailwind',
     template: 'packages/html/src/define/audio/minimal-skin.tailwind.ts',
     iconSet: 'minimal',
-    tailwindModule: '@videojs/skins/minimal/tailwind/audio.tailwind',
   },
 
   // React CSS
@@ -712,11 +707,7 @@ function extractTemplateLiteral(source: string): string {
   return match[1];
 }
 
-/**
- * Collect all import names that the template uses from the tailwind module.
- * Parses lines like: `import { foo, bar } from '@videojs/skins/...'`
- * and also picks up re-imports from other modules used in the template.
- */
+/** Collect named package imports used by an HTML skin template. */
 function parseImportedNames(source: string): Map<string, string> {
   const imports = new Map<string, string>();
   const importRegex = /import\s+\{([^}]+)\}\s+from\s+['"]([^'"]+)['"]/g;
@@ -737,21 +728,41 @@ function parseImportedNames(source: string): Map<string, string> {
   return imports;
 }
 
-async function loadCn(): Promise<(...args: unknown[]) => string> {
-  const mod = await import(pkgDistUrl('@videojs/utils/style'));
-  return mod.cn;
-}
+async function loadImportedNames(
+  source: string,
+  template: string,
+  templatePath: string,
+  context: Record<string, unknown>
+): Promise<void> {
+  const modules = new Map<string, Record<string, unknown>>();
 
-async function loadTailwindTokens(specifier: string): Promise<Record<string, unknown>> {
-  return await import(pkgDistUrl(specifier));
+  for (const [name, specifier] of parseImportedNames(source)) {
+    if (!new RegExp(`\\b${name}\\b`).test(template)) {
+      continue;
+    }
+
+    let imported = modules.get(specifier);
+    if (!imported) {
+      const url = specifier.startsWith('@videojs/')
+        ? pkgDistUrl(specifier)
+        : pathToFileURL(resolve(ROOT, dirname(templatePath), specifier)).href;
+      const loaded = (await import(url)) as Record<string, unknown>;
+      modules.set(specifier, loaded);
+      imported = loaded;
+    }
+
+    if (name in imported) {
+      context[name] = imported[name];
+    }
+  }
 }
 
 /**
  * Evaluate the HTML template by replacing `${...}` expressions with
  * their computed values.
  *
- * Uses `new Function()` to evaluate the template literal in a context
- * that provides renderIcon, cn, SEEK_TIME, and all tailwind tokens.
+ * Uses `new Function()` to evaluate the template literal in a context that
+ * provides the template's named package imports and skin-specific values.
  */
 function evaluateTemplate(templateBody: string, context: Record<string, unknown>): string {
   const keys = Object.keys(context);
@@ -821,38 +832,13 @@ async function processHtmlSkin(skin: HtmlSkinDef): Promise<string> {
   validatePackageImports(source, skin.template);
   const templateBody = extractTemplateLiteral(source);
 
-  const cn = await loadCn();
-
   // Build context object with all the variables the template needs
   const context: Record<string, unknown> = {
-    renderIcon: createRenderMediaIcon(skin.iconSet),
-    cn,
     SEEK_TIME: 10,
   };
 
-  if (skin.style === 'tailwind') {
-    // Load the primary tailwind module
-    if (skin.tailwindModule) {
-      const tokens = await loadTailwindTokens(skin.tailwindModule);
-      Object.assign(context, tokens);
-    }
-
-    // Check if the source imports from additional tailwind modules
-    const imports = parseImportedNames(source);
-    const loadedModules = new Set<string>();
-    if (skin.tailwindModule) loadedModules.add(skin.tailwindModule);
-
-    for (const [name, mod] of imports) {
-      if (mod.includes('/tailwind/') && !loadedModules.has(mod)) {
-        loadedModules.add(mod);
-        const extraTokens = await loadTailwindTokens(mod);
-        // Only add names that aren't already in context
-        if (!(name in context) && name in extraTokens) {
-          context[name] = extraTokens[name];
-        }
-      }
-    }
-  }
+  await loadImportedNames(source, templateBody, skin.template, context);
+  context.renderIcon = createRenderMediaIcon(skin.iconSet);
 
   let html = evaluateTemplate(templateBody, context);
   html = replaceSlots(html, getSkinMediaType(skin));
@@ -1397,11 +1383,17 @@ function destructureSkinProps(source: string): string {
 }
 
 /**
- * Flatten the skin into a Player component: merge SkinProps into PlayerProps
- * (adding `src`), inline the skin body into VideoPlayer/AudioPlayer wrapped
- * in `Player.Provider`, and remove the separate Skin export.
+ * Flatten the skin into a Player component. Produces two files:
+ *   - `player.ts`: owns the `createPlayer({ features })` call and exports `Player`.
+ *   - `VideoPlayer.tsx` / `AudioPlayer.tsx`: imports `Player` from `./player` and
+ *     owns the React component. Splitting these avoids React Fast Refresh bailing
+ *     out (a file must export only components for Fast Refresh to apply edits).
+ *
+ * Also: merges SkinProps into PlayerProps (adding `src`), inlines the skin body
+ * into VideoPlayer/AudioPlayer wrapped in `Player.Provider`, and removes the
+ * separate Skin export.
  */
-function flattenSkinIntoPlayer(source: string, mediaType: MediaType): string {
+function flattenSkinIntoPlayer(source: string, mediaType: MediaType): { player: string; component: string } {
   const isVideo = mediaType === 'video';
   const mediaTag = isVideo ? 'Video' : 'Audio';
   const features = isVideo ? 'videoFeatures' : 'audioFeatures';
@@ -1409,25 +1401,28 @@ function flattenSkinIntoPlayer(source: string, mediaType: MediaType): string {
   const subpath = isVideo ? 'video' : 'audio';
   const playsInline = isVideo ? ' playsInline' : '';
 
-  // 1. Add createPlayer to the @videojs/react import
-  source = source.replace(
-    /import \{([^}]+)\} from '@videojs\/react';/,
-    (_, names) => `import { createPlayer,${names}} from '@videojs/react';`
-  );
+  const player = [
+    `import { createPlayer } from '@videojs/react';`,
+    `import { ${features} } from '@videojs/react/${subpath}';`,
+    '',
+    `export const Player = createPlayer({ features: ${features} });`,
+    '',
+  ].join('\n');
 
-  // 2. Add Video/Audio + features import and CSS import
-  const mediaImport = `import { ${mediaTag}, ${features} } from '@videojs/react/${subpath}';`;
+  // 1. Add Video/Audio import, CSS import, and Player import from ./player
+  const mediaImport = `import { ${mediaTag} } from '@videojs/react/${subpath}';`;
   const cssImport = "import './player.css';";
-  source = source.replace(/(import \{[^}]*\} from '@videojs\/react';)/, `$1\n${mediaImport}\n${cssImport}`);
-
-  // 3. Add Player const above the interface, rename SkinProps → PlayerProps, replace `children` with `src`
+  const playerImport = "import { Player } from './player';";
   source = source.replace(
-    /export interface \w+SkinProps/,
-    `export const Player = createPlayer({ features: ${features} });\n\nexport interface ${playerName}Props`
+    /(import \{[^}]*\} from '@videojs\/react';)/,
+    `$1\n${mediaImport}\n${cssImport}\n${playerImport}`
   );
+
+  // 2. Rename SkinProps → PlayerProps, replace `children` with `src`
+  source = source.replace(/export interface \w+SkinProps/, `export interface ${playerName}Props`);
   source = source.replace(/(\s*)children\?: ReactNode;/, `$1src: string;`);
 
-  // 4. Replace the skin function: rename, swap children→src, wrap in Player.Provider
+  // 3. Replace the skin function: rename, swap children→src, wrap in Player.Provider
   //    Match the destructured form: function XSkin({ children, className, poster, ...rest }: XSkinProps): ReactNode {
   source = source.replace(
     /export function \w+Skin\(\{ children, ([^}]+)\}: \w+SkinProps\): ReactNode \{\n([\s\S]*?)\n\}/,
@@ -1452,7 +1447,7 @@ function flattenSkinIntoPlayer(source: string, mediaType: MediaType): string {
       const hasPoster = destructuredRest.includes('poster');
       const posterExample = hasPoster ? `\n *   poster="${DEMO_POSTER_SRC}"` : '';
 
-      // Player const, @example JSDoc, and the function signature
+      // @example JSDoc and the function signature
       const header = [
         '/**',
         ' * @example',
@@ -1469,17 +1464,19 @@ function flattenSkinIntoPlayer(source: string, mediaType: MediaType): string {
     }
   );
 
-  // 5. Remove the "Skin" section header (it's now part of "Player")
+  // 4. Remove the "Skin" section header (it's now part of "Player")
   source = source.replace(/\/\/ =+\n\/\/ Skin\n\/\/ =+\n\n/, `${sectionHeader('Player')}\n\n`);
 
-  return source;
+  return { player, component: source };
 }
 
 /**
  * Process a React skin: rewrite icon imports, resolve imports,
  * and produce both TSX and JSX versions.
  */
-async function processReactSkin(skin: ReactSkinDef): Promise<{ tsx: string; jsx: string }> {
+async function processReactSkin(
+  skin: ReactSkinDef
+): Promise<{ tsx: Record<string, string>; jsx: Record<string, string> }> {
   const absPath = resolve(ROOT, skin.source);
   let source = readFileSync(absPath, 'utf-8');
   source = rewriteReactIconImports(source);
@@ -1521,12 +1518,21 @@ async function processReactSkin(skin: ReactSkinDef): Promise<{ tsx: string; jsx:
   // 10. Destructure skin props in function argument instead of body
   tsx = destructureSkinProps(tsx);
 
-  // 11. Flatten skin into player (merge props, inline body, wrap in Player.Provider)
-  tsx = flattenSkinIntoPlayer(tsx, getSkinMediaType(skin));
+  // 11. Flatten skin into player (split into player.ts + Player.tsx, wrap in Player.Provider)
+  const mediaType = getSkinMediaType(skin);
+  const { player, component } = flattenSkinIntoPlayer(tsx, mediaType);
+  const componentFile = mediaType === 'video' ? 'VideoPlayer' : 'AudioPlayer';
 
-  const jsx = tsxToJsx(tsx);
-
-  return { tsx, jsx };
+  return {
+    tsx: {
+      'player.ts': player,
+      [`${componentFile}.tsx`]: component,
+    },
+    jsx: {
+      'player.js': tsxToJsx(player),
+      [`${componentFile}.jsx`]: tsxToJsx(component),
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------

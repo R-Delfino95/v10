@@ -1,6 +1,7 @@
 // Registers the audio player, container, and all audio UI custom elements
 // without creating a skin element. Use this entry when building an ejected
 // (light DOM) player layout.
+import { I18nProviderElement } from '../../i18n/provider-element';
 import { MediaContainerElement } from '../../media/container-element';
 import { BufferingIndicatorElement } from '../../ui/buffering-indicator/buffering-indicator-element';
 import { GestureElement } from '../../ui/gesture/gesture-element';
@@ -12,12 +13,9 @@ import { PlaybackRateButtonElement } from '../../ui/playback-rate-button/playbac
 import { PlaybackRateRadioGroupElement } from '../../ui/playback-rate-radio-group/playback-rate-radio-group-element';
 import { PopoverElement } from '../../ui/popover/popover-element';
 import { SeekButtonElement } from '../../ui/seek-button/seek-button-element';
-import { TooltipElement } from '../../ui/tooltip/tooltip-element';
-import { TooltipGroupElement } from '../../ui/tooltip/tooltip-group-element';
-import { TooltipLabelElement } from '../../ui/tooltip/tooltip-label-element';
-import { TooltipShortcutElement } from '../../ui/tooltip/tooltip-shortcut-element';
+import { TextElement } from '../../ui/text/text-element';
 import { safeDefine } from '../safe-define';
-import { defineErrorDialog, defineMenu, defineSliders, defineTime } from '../ui/compounds';
+import { defineErrorDialog, defineMenu, defineSliders, defineTime, defineTooltip } from '../ui/compounds';
 
 // Value import — player.ts body runs before this module's body.
 import { AudioPlayerElement } from './player';
@@ -26,12 +24,14 @@ import { AudioPlayerElement } from './player';
 
 safeDefine(AudioPlayerElement);
 safeDefine(MediaContainerElement);
+safeDefine(I18nProviderElement);
 
 // Compound groups.
 defineErrorDialog();
 defineSliders();
 defineTime();
 defineMenu();
+defineTooltip();
 
 // Standalone elements.
 safeDefine(GestureElement);
@@ -44,7 +44,4 @@ safeDefine(PlaybackRateButtonElement);
 safeDefine(PlaybackRateRadioGroupElement);
 safeDefine(PopoverElement);
 safeDefine(SeekButtonElement);
-safeDefine(TooltipLabelElement);
-safeDefine(TooltipShortcutElement);
-safeDefine(TooltipElement);
-safeDefine(TooltipGroupElement);
+safeDefine(TextElement);

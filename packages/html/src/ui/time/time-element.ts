@@ -1,7 +1,13 @@
 import { TimeCore, TimeDataAttrs, type TimeType } from '@videojs/core';
 import { applyElementProps, applyStateDataAttrs, logMissingFeature, selectTime } from '@videojs/core/dom';
+import { type Text, translateText } from '@videojs/core/i18n';
+import { remainingSuffixText } from '@videojs/core/i18n/text/time';
 import type { PropertyDeclarationMap, PropertyValues } from '@videojs/element';
 import { isInteractiveActivation } from '@videojs/utils/dom';
+import { formatTimeAsPhrase } from '@videojs/utils/time';
+
+import { i18nContext } from '../../i18n/context';
+import { I18nController } from '../../i18n/controller';
 import { playerContext } from '../../player/context';
 import { PlayerController } from '../../player/player-controller';
 import { MediaElement } from '../media-element';
@@ -18,11 +24,12 @@ export class TimeElement extends MediaElement {
 
   type: TimeType = TimeCore.defaultProps.type;
   negativeSign = TimeCore.defaultProps.negativeSign;
-  label = TimeCore.defaultProps.label;
+  label: Text | string = '';
   toggle = TimeCore.defaultProps.toggle;
 
   readonly #core = new TimeCore();
   readonly #state = new PlayerController(this, playerContext, selectTime);
+  readonly #i18n = new I18nController(this, i18nContext);
 
   readonly #signSpan = document.createElement('span');
   readonly #textNode = document.createTextNode('');
@@ -89,8 +96,24 @@ export class TimeElement extends MediaElement {
     this.#signSpan.textContent = state.negative ? this.negativeSign : '';
     this.#textNode.textContent = state.text;
 
-    applyElementProps(this, this.#core.getAttrs(state, this.type));
+    const attrs = this.#core.getAttrs(state, this.type);
+    applyElementProps(this, {
+      ...attrs,
+      'aria-label': translateText(attrs['aria-label'], this.#i18n.value, this.#getLabelParams(state)),
+    });
     applyStateDataAttrs(this, state, TimeDataAttrs);
+  }
+
+  #getLabelParams(state: TimeCore.State): { duration: string } | undefined {
+    const params = this.#core.getLabelParams(state);
+    if (!params) return undefined;
+
+    const duration = formatTimeAsPhrase(Math.abs(state.seconds), { locale: this.#i18n.locale });
+
+    return {
+      duration:
+        state.type === 'remaining' ? translateText(remainingSuffixText, this.#i18n.value, { duration }) : duration,
+    };
   }
 
   #handleClick = (event: MouseEvent): void => {
@@ -134,7 +157,6 @@ export class TimeElement extends MediaElement {
   #clearAttrs(): void {
     applyElementProps(this, {
       'aria-label': undefined,
-      'aria-valuetext': undefined,
       role: undefined,
       tabIndex: undefined,
       'data-type': undefined,

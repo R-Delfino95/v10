@@ -1,3 +1,4 @@
+import { playbackRateText } from '@videojs/core/i18n/text/menu';
 import {
   button,
   buttonGroup,
@@ -18,6 +19,7 @@ import {
 } from '@videojs/skins/default/tailwind/audio.tailwind';
 import { cn } from '@videojs/utils/style';
 import { type ComponentProps, forwardRef, type ReactNode } from 'react';
+import { useTranslator } from '@/i18n/context';
 import {
   CheckIcon,
   PauseIcon,
@@ -29,7 +31,8 @@ import {
   VolumeLowIcon,
   VolumeOffIcon,
 } from '@/icons';
-import { Container, usePlayer } from '@/player/context';
+import { Container } from '@/player/container';
+import { usePlayer } from '@/player/context';
 import { BufferingIndicator } from '@/ui/buffering-indicator';
 import { ErrorDialog } from '@/ui/error-dialog';
 import { Hotkey } from '@/ui/hotkey';
@@ -127,13 +130,14 @@ function VolumePopover(): ReactNode {
 }
 
 function PlaybackRateRadioGroup(): ReactNode {
+  const t = useTranslator();
   const state = usePlaybackRateOptions();
   if (!state) return null;
 
   const { options, setValue, value } = state;
 
   return (
-    <Menu.RadioGroup className={menu.group} value={value} onValueChange={setValue} aria-label="Playback rate">
+    <Menu.RadioGroup className={menu.group} value={value} onValueChange={setValue} aria-label={t(playbackRateText)}>
       {options.map((option) => (
         <Menu.RadioItem key={option.value} className={menu.item} value={option.value} disabled={option.disabled}>
           <span>{option.label}</span>
@@ -171,11 +175,11 @@ export function AudioSkinTailwind(props: AudioSkinProps): ReactNode {
         <ErrorDialog.Popup className={error.root}>
           <div className={error.dialog}>
             <div className={error.content}>
-              <ErrorDialog.Title className={error.title}>Something went wrong.</ErrorDialog.Title>
+              <ErrorDialog.Title className={error.title}></ErrorDialog.Title>
               <ErrorDialog.Description className={error.description} />
             </div>
             <div className={error.actions}>
-              <ErrorDialog.Close className={cn(button.base, button.subtle)}>OK</ErrorDialog.Close>
+              <ErrorDialog.Close className={cn(button.base, button.subtle)}></ErrorDialog.Close>
             </div>
           </div>
         </ErrorDialog.Popup>
@@ -212,7 +216,7 @@ export function AudioSkinTailwind(props: AudioSkinProps): ReactNode {
             <Tooltip.Root side="top" boundary="viewport">
               <Tooltip.Trigger
                 render={
-                  <SeekButton seconds={-SEEK_TIME} render={<Button />}>
+                  <SeekButton seconds={-SEEK_TIME} render={<Button className={button.seek} />}>
                     <span className={iconContainer}>
                       <SeekIcon className={cn(icon, iconFlipped)} />
                       <span className={cn(seek.label, seek.labelBackward)}>{SEEK_TIME}</span>
@@ -229,7 +233,7 @@ export function AudioSkinTailwind(props: AudioSkinProps): ReactNode {
             <Tooltip.Root side="top" boundary="viewport">
               <Tooltip.Trigger
                 render={
-                  <SeekButton seconds={SEEK_TIME} render={<Button />}>
+                  <SeekButton seconds={SEEK_TIME} render={<Button className={button.seek} />}>
                     <span className={iconContainer}>
                       <SeekIcon className={icon} />
                       <span className={cn(seek.label, seek.labelForward)}>{SEEK_TIME}</span>
@@ -289,7 +293,7 @@ export function AudioSkinTailwind(props: AudioSkinProps): ReactNode {
       <Hotkey keys="<" action="speedDown" />
 
       {/* Input Feedback */}
-      <StatusAnnouncer />
+      <StatusAnnouncer className="sr-only" />
     </Container>
   );
 }

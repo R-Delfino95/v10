@@ -2,8 +2,10 @@
 
 import { QUALITY_AUTO_VALUE, QualityRadioGroupCore } from '@videojs/core';
 import { logMissingFeature, selectQuality } from '@videojs/core/dom';
+import { translateText } from '@videojs/core/i18n';
 import { useCallback, useState } from 'react';
 
+import { useTranslator } from '../../i18n/context';
 import { usePlayer } from '../../player/context';
 
 export interface QualityOptionsProps extends QualityRadioGroupCore.Props {}
@@ -24,10 +26,18 @@ export interface QualityOptionsResult {
   setValue: (value: string) => void;
 }
 
+/**
+ * Create quality menu options (including an `Auto` option) from the player
+ * video rendition state. Returns `null` when the quality feature is not
+ * configured.
+ *
+ * @param props - Optional `label`, `formatRendition`, and `disabled` overrides.
+ */
 export function useQualityOptions(props?: QualityOptionsProps): QualityOptionsResult | null {
   'use no memo';
 
   const media = usePlayer(selectQuality);
+  const t = useTranslator();
   const [core] = useState(() => new QualityRadioGroupCore());
 
   core.setProps(props ?? {});
@@ -46,10 +56,14 @@ export function useQualityOptions(props?: QualityOptionsProps): QualityOptionsRe
     state,
     value: state.value,
     options: [
-      { value: QUALITY_AUTO_VALUE, label: state.autoLabel, disabled: state.disabled },
+      {
+        value: QUALITY_AUTO_VALUE,
+        label: translateText(state.autoLabel, t, state.autoLabelParams),
+        disabled: state.disabled,
+      },
       ...state.renditions.map((rendition) => ({
         value: rendition.value,
-        label: rendition.label,
+        label: translateText(rendition.label, t),
         ...(rendition.tier && { tier: rendition.tier }),
         ...(rendition.badge && { badge: rendition.badge }),
         disabled: state.disabled,

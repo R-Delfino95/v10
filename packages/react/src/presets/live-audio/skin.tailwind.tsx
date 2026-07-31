@@ -9,11 +9,13 @@ import {
   popup,
   root,
   slider,
+  spacer,
 } from '@videojs/skins/default/tailwind/audio.tailwind';
 import { cn } from '@videojs/utils/style';
 import { type ComponentProps, forwardRef, type ReactNode } from 'react';
 import { PauseIcon, PlayIcon, RestartIcon, SpinnerIcon, VolumeHighIcon, VolumeLowIcon, VolumeOffIcon } from '@/icons';
-import { Container, usePlayer } from '@/player/context';
+import { Container } from '@/player/container';
+import { usePlayer } from '@/player/context';
 import { BufferingIndicator } from '@/ui/buffering-indicator';
 import { ErrorDialog } from '@/ui/error-dialog';
 import { Hotkey } from '@/ui/hotkey';
@@ -108,11 +110,11 @@ export function LiveAudioSkinTailwind(props: LiveAudioSkinProps): ReactNode {
         <ErrorDialog.Popup className={error.root}>
           <div className={error.dialog}>
             <div className={error.content}>
-              <ErrorDialog.Title className={error.title}>Something went wrong.</ErrorDialog.Title>
+              <ErrorDialog.Title className={error.title}></ErrorDialog.Title>
               <ErrorDialog.Description className={error.description} />
             </div>
             <div className={error.actions}>
-              <ErrorDialog.Close className={cn(button.base, button.subtle)}>OK</ErrorDialog.Close>
+              <ErrorDialog.Close className={cn(button.base, button.subtle)}></ErrorDialog.Close>
             </div>
           </div>
         </ErrorDialog.Popup>
@@ -149,7 +151,7 @@ export function LiveAudioSkinTailwind(props: LiveAudioSkinProps): ReactNode {
             <LiveButton className={cn(button.base, button.subtle, button.live)} />
           </div>
 
-          <div className="grow" aria-hidden="true" />
+          <div className={spacer} aria-hidden="true" />
 
           <div className={buttonGroup}>
             <VolumePopover />
@@ -165,7 +167,7 @@ export function LiveAudioSkinTailwind(props: LiveAudioSkinProps): ReactNode {
       <Hotkey keys="ArrowDown" action="volumeStep" value={-0.05} />
 
       {/* Input Feedback */}
-      <StatusAnnouncer />
+      <StatusAnnouncer className="sr-only" />
     </Container>
   );
 }

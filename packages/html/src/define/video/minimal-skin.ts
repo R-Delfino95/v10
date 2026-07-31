@@ -1,13 +1,13 @@
+import { audioText, captionsText, qualityText, settingsText, speedText } from '@videojs/core/i18n/text/menu';
 import { renderIcon } from '@videojs/icons/render/minimal';
 import { createShadowStyle, createTemplate } from '@videojs/utils/dom';
+import { renderText } from '../../i18n/render-text';
 import { safeDefine } from '../safe-define';
 import { SkinElement } from '../skin-element';
 import styles from './minimal-skin.css?inline';
 
 // Register the player, container, and all UI custom elements.
 import './minimal-ui';
-
-const SEEK_TIME = 10;
 
 function getTemplateHTML() {
   return /*html*/ `
@@ -27,11 +27,11 @@ function getTemplateHTML() {
       <media-error-dialog class="media-error">
         <div class="media-error__dialog">
           <div class="media-error__content">
-            <media-alert-dialog-title class="media-error__title">Something went wrong.</media-alert-dialog-title>
+            <media-alert-dialog-title class="media-error__title"></media-alert-dialog-title>
             <media-alert-dialog-description class="media-error__description"></media-alert-dialog-description>
           </div>
           <div class="media-error__actions">
-            <media-alert-dialog-close class="media-button media-button--primary">OK</media-alert-dialog-close>
+            <media-alert-dialog-close class="media-button media-button--primary"></media-alert-dialog-close>
           </div>
         </div>
       </media-error-dialog>
@@ -49,27 +49,20 @@ function getTemplateHTML() {
               <media-tooltip-shortcut class="media-tooltip__kbd"></media-tooltip-shortcut>
             </media-tooltip>
 
-            <media-seek-button commandfor="seek-backward-tooltip" seconds="${-SEEK_TIME}" class="media-button media-button--subtle media-button--icon media-button--seek">
-              <span class="media-icon__container">
-                ${renderIcon('seek', { class: 'media-icon media-icon--flipped' })}
-                <span class="media-icon__label">${SEEK_TIME}</span>
-              </span>
-            </media-seek-button>
-            <media-tooltip id="seek-backward-tooltip" side="top" class="media-tooltip">
-              <media-tooltip-label></media-tooltip-label>
-              <media-tooltip-shortcut class="media-tooltip__kbd"></media-tooltip-shortcut>
-            </media-tooltip>
+            <media-mute-button commandfor="video-volume-popover" class="media-button media-button--subtle media-button--icon media-button--mute">
+              ${renderIcon('volume-off', { class: 'media-icon media-icon--volume-off' })}
+              ${renderIcon('volume-low', { class: 'media-icon media-icon--volume-low' })}
+              ${renderIcon('volume-high', { class: 'media-icon media-icon--volume-high' })}
+            </media-mute-button>
 
-            <media-seek-button commandfor="seek-forward-tooltip" seconds="${SEEK_TIME}" class="media-button media-button--subtle media-button--icon media-button--seek">
-              <span class="media-icon__container">
-                ${renderIcon('seek', { class: 'media-icon' })}
-                <span class="media-icon__label">${SEEK_TIME}</span>
-              </span>
-            </media-seek-button>
-            <media-tooltip id="seek-forward-tooltip" side="top" class="media-tooltip">
-              <media-tooltip-label></media-tooltip-label>
-              <media-tooltip-shortcut class="media-tooltip__kbd"></media-tooltip-shortcut>
-            </media-tooltip>
+            <media-popover id="video-volume-popover" open-on-hover delay="200" close-delay="100" side="right" class="media-popover media-popover--volume">
+              <media-volume-slider class="media-slider" orientation="horizontal" thumb-alignment="edge">
+                <media-slider-track class="media-slider__track">
+                  <media-slider-fill class="media-slider__fill"></media-slider-fill>
+                </media-slider-track>
+                <media-slider-thumb class="media-slider__thumb media-slider__thumb--persistent"></media-slider-thumb>
+              </media-volume-slider>
+            </media-popover>
           </div>
 
           <div class="media-time-controls">
@@ -101,30 +94,25 @@ function getTemplateHTML() {
           </div>
 
           <div class="media-button-group">
-            <media-mute-button commandfor="video-volume-popover" class="media-button media-button--subtle media-button--icon media-button--mute">
-              ${renderIcon('volume-off', { class: 'media-icon media-icon--volume-off' })}
-              ${renderIcon('volume-low', { class: 'media-icon media-icon--volume-low' })}
-              ${renderIcon('volume-high', { class: 'media-icon media-icon--volume-high' })}
-            </media-mute-button>
+            <media-captions-button commandfor="captions-tooltip" class="media-button media-button--subtle media-button--icon media-button--captions">
+              ${renderIcon('captions-off', { class: 'media-icon media-icon--captions-off' })}
+              ${renderIcon('captions-on', { class: 'media-icon media-icon--captions-on' })}
+            </media-captions-button>
+            <media-tooltip id="captions-tooltip" side="top" class="media-tooltip">
+              <media-tooltip-label></media-tooltip-label>
+              <media-tooltip-shortcut class="media-tooltip__kbd"></media-tooltip-shortcut>
+            </media-tooltip>
 
-            <media-popover id="video-volume-popover" open-on-hover delay="200" close-delay="100" side="top" class="media-popover media-popover--volume">
-              <media-volume-slider class="media-slider" orientation="vertical" thumb-alignment="edge">
-                <media-slider-track class="media-slider__track">
-                  <media-slider-fill class="media-slider__fill"></media-slider-fill>
-                </media-slider-track>
-                <media-slider-thumb class="media-slider__thumb media-slider__thumb--persistent"></media-slider-thumb>
-              </media-volume-slider>
-            </media-popover>
-
-            <button commandfor="settings-menu" aria-label="Settings" class="media-button media-button--subtle media-button--icon media-button--settings">
+            <button commandfor="settings-menu" aria-labelledby="settings-label" class="media-button media-button--subtle media-button--icon media-button--settings">
               ${renderIcon('gear', { class: 'media-icon media-icon--settings' })}
+              ${renderText(settingsText, { id: 'settings-label', class: 'media-sr-only' })}
             </button>
             <media-menu id="settings-menu" side="top" align="center" class="media-popover media-menu media-menu--settings">
               <media-menu-view class="media-menu__panel">
                 <div class="media-menu__group">
                   <media-menu-item commandfor="settings-quality-menu" type="quality" data-setting="quality" class="media-menu__item media-menu__item--submenu">
                     ${renderIcon('switches', { class: 'media-icon' })}
-                    <span>Quality</span>
+                    ${renderText(qualityText)}
                     <span class="media-menu__hint">
                       <media-menu-item-value class="media-menu__hint-label"></media-menu-item-value>
                       ${renderIcon('chevron', { class: 'media-icon media-menu__chevron' })}
@@ -132,7 +120,7 @@ function getTemplateHTML() {
                   </media-menu-item>
                   <media-menu-item commandfor="settings-audio-menu" type="audio-track" data-setting="audio-track" class="media-menu__item media-menu__item--submenu">
                     ${renderIcon('speech', { class: 'media-icon' })}
-                    <span>Audio</span>
+                    ${renderText(audioText)}
                     <span class="media-menu__hint">
                       <media-menu-item-value class="media-menu__hint-label"></media-menu-item-value>
                       ${renderIcon('chevron', { class: 'media-icon media-menu__chevron' })}
@@ -140,7 +128,7 @@ function getTemplateHTML() {
                   </media-menu-item>
                   <media-menu-item commandfor="settings-speed-menu" type="playback-rate" data-setting="playback-rate" class="media-menu__item media-menu__item--submenu">
                     ${renderIcon('speed', { class: 'media-icon' })}
-                    <span>Speed</span>
+                    ${renderText(speedText)}
                     <span class="media-menu__hint">
                       <media-menu-item-value class="media-menu__hint-label"></media-menu-item-value>
                       ${renderIcon('chevron', { class: 'media-icon media-menu__chevron' })}
@@ -148,7 +136,7 @@ function getTemplateHTML() {
                   </media-menu-item>
                   <media-menu-item commandfor="settings-captions-menu" type="captions" data-setting="captions" class="media-menu__item media-menu__item--submenu">
                     ${renderIcon('captions-off', { class: 'media-icon' })}
-                    <span>Captions</span>
+                    ${renderText(captionsText)}
                     <span class="media-menu__hint">
                       <media-menu-item-value class="media-menu__hint-label"></media-menu-item-value>
                       ${renderIcon('chevron', { class: 'media-icon media-menu__chevron' })}
@@ -160,7 +148,7 @@ function getTemplateHTML() {
               <media-menu id="settings-quality-menu" class="media-menu__panel">
                 <media-menu-back class="media-menu__back">
                   ${renderIcon('chevron', { class: 'media-icon media-menu__chevron media-icon--flipped' })}
-                  Quality
+                  ${renderText(qualityText)}
                 </media-menu-back>
                 <div class="media-menu__separator"></div>
                 <media-quality-radio-group class="media-menu__group">
@@ -182,7 +170,7 @@ function getTemplateHTML() {
               <media-menu id="settings-audio-menu" class="media-menu__panel">
                 <media-menu-back class="media-menu__back">
                   ${renderIcon('chevron', { class: 'media-icon media-menu__chevron media-icon--flipped' })}
-                  Audio
+                  ${renderText(audioText)}
                 </media-menu-back>
                 <div class="media-menu__separator"></div>
                 <media-audio-track-radio-group class="media-menu__group">
@@ -200,7 +188,7 @@ function getTemplateHTML() {
               <media-menu id="settings-speed-menu" class="media-menu__panel">
                 <media-menu-back class="media-menu__back">
                   ${renderIcon('chevron', { class: 'media-icon media-menu__chevron media-icon--flipped' })}
-                  Speed
+                  ${renderText(speedText)}
                 </media-menu-back>
                 <div class="media-menu__separator"></div>
                 <media-playback-rate-radio-group class="media-menu__group">
@@ -218,7 +206,7 @@ function getTemplateHTML() {
               <media-menu id="settings-captions-menu" class="media-menu__panel">
                 <media-menu-back class="media-menu__back">
                   ${renderIcon('chevron', { class: 'media-icon media-menu__chevron media-icon--flipped' })}
-                  Captions
+                  ${renderText(captionsText)}
                 </media-menu-back>
                 <div class="media-menu__separator"></div>
                 <media-captions-radio-group class="media-menu__group">
@@ -302,7 +290,7 @@ function getTemplateHTML() {
       <media-gesture type="doubletap" action="seekStep" value="10" region="right"></media-gesture>
 
       <!-- Input Feedback -->
-      <media-status-announcer></media-status-announcer>
+      <media-status-announcer class="media-sr-only"></media-status-announcer>
       <div class="media-input-feedback">
         <media-volume-indicator hidden class="media-input-feedback-island media-input-feedback-island--volume">
           <media-volume-indicator-fill class="media-input-feedback-island__content">

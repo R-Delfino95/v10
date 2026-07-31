@@ -1,7 +1,11 @@
 import { applyElementProps } from '@videojs/core/dom';
+import { type Text, translateText } from '@videojs/core/i18n';
+import { backText } from '@videojs/core/i18n/text/menu';
 import type { PropertyDeclarationMap, PropertyValues } from '@videojs/element';
 import { ContextConsumer } from '@videojs/element/context';
 
+import { i18nContext } from '../../i18n/context';
+import { I18nController } from '../../i18n/controller';
 import { MediaElement } from '../media-element';
 import { menuContext } from './context';
 
@@ -12,8 +16,9 @@ export class MenuBackElement extends MediaElement {
     label: { type: String },
   } satisfies PropertyDeclarationMap<'label'>;
 
-  label = 'Back';
+  label: Text | string = backText;
 
+  readonly #i18n = new I18nController(this, i18nContext);
   readonly #ctx = new ContextConsumer(this, { context: menuContext, subscribe: true });
 
   #disconnect: AbortController | null = null;
@@ -55,7 +60,7 @@ export class MenuBackElement extends MediaElement {
 
     applyElementProps(this, {
       role: 'button',
-      'aria-label': this.label,
+      'aria-label': translateText(this.label, this.#i18n.value),
     });
   }
 }

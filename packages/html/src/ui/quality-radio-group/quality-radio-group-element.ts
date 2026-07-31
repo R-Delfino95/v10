@@ -1,7 +1,10 @@
 import { QUALITY_AUTO_VALUE, QualityRadioGroupCore, QualityRadioGroupDataAttrs } from '@videojs/core';
 import { applyStateDataAttrs, logMissingFeature, selectQuality } from '@videojs/core/dom';
+import { type Text, type Translator, translateText } from '@videojs/core/i18n';
 import type { PropertyDeclarationMap, PropertyValues } from '@videojs/element';
-
+import { cacheKey } from '../../i18n/cache-key';
+import { i18nContext } from '../../i18n/context';
+import { I18nController } from '../../i18n/controller';
 import { playerContext } from '../../player/context';
 import { PlayerController } from '../../player/player-controller';
 import { MenuItemIndicatorElement } from '../menu/menu-item-indicator-element';
@@ -18,13 +21,15 @@ export class QualityRadioGroupElement extends MenuRadioGroupElement {
   } satisfies PropertyDeclarationMap<'value' | 'label' | 'disabled'>;
 
   disabled = false;
-  label = '';
+  label: Text | string = '';
   formatRendition = QualityRadioGroupCore.defaultProps.formatRendition;
 
   readonly #core = new QualityRadioGroupCore();
+  readonly #i18n = new I18nController(this, i18nContext);
   readonly #mediaState = new PlayerController(this, playerContext, selectQuality);
 
   #renditionsKey = '';
+  #renditionsTranslator: Translator | null = null;
   #disconnect: AbortController | null = null;
 
   override connectedCallback(): void {
@@ -50,12 +55,12 @@ export class QualityRadioGroupElement extends MenuRadioGroupElement {
     let state: QualityRadioGroupCore.State | null = null;
 
     if (media) {
-      this.#core.setProps({ formatRendition: this.formatRendition, disabled: this.disabled });
+      this.#core.setProps({ formatRendition: this.formatRendition, disabled: this.disabled, label: this.label });
       this.#core.setMedia(media);
       state = this.#core.getState();
 
       this.value = state.value;
-      this.label = this.label || 'Quality';
+      this.applyAriaLabel(this.#i18n.value, this.#core.getLabel(state));
       this.#syncContent(state);
     }
 
@@ -65,24 +70,43 @@ export class QualityRadioGroupElement extends MenuRadioGroupElement {
   }
 
   #syncContent(state: QualityRadioGroupCore.State): void {
-    const template = this.#getTemplate();
+    const template = this.getTemplate();
     const templateKey = template?.innerHTML ?? '';
+    const translator = this.#i18n.value;
     const renditionsKey = `${state.renditions
-      .map((rendition) => `${rendition.value}:${rendition.label}:${rendition.tier ?? ''}:${rendition.badge ?? ''}`)
-      .join('|')}::${state.autoLabel}::${templateKey}`;
+      .map(
+        (rendition) =>
+          `${rendition.value}:${cacheKey(rendition.label)}:${rendition.tier ?? ''}:${rendition.badge ?? ''}`
+      )
+      .join('|')}::${cacheKey(state.autoLabel, state.autoLabelParams)}::${this.#i18n.locale}::${templateKey}`;
 
-    if (renditionsKey !== this.#renditionsKey) {
+    if (renditionsKey !== this.#renditionsKey || translator !== this.#renditionsTranslator) {
       this.#renditionsKey = renditionsKey;
+      this.#renditionsTranslator = translator;
 
       for (const child of [...this.children]) {
         if (child instanceof HTMLTemplateElement) continue;
         child.remove();
       }
 
-      this.append(this.#createItem(QUALITY_AUTO_VALUE, state.autoLabel, undefined, undefined, template));
+      this.append(
+        this.#createItem(
+          QUALITY_AUTO_VALUE,
+          translateText(state.autoLabel, translator, state.autoLabelParams),
+          undefined,
+          undefined,
+          template
+        )
+      );
       this.append(
         ...state.renditions.map((rendition) =>
-          this.#createItem(rendition.value, rendition.label, rendition.tier, rendition.badge, template)
+          this.#createItem(
+            rendition.value,
+            translateText(rendition.label, translator),
+            rendition.tier,
+            rendition.badge,
+            template
+          )
         )
       );
     }
@@ -105,26 +129,13 @@ export class QualityRadioGroupElement extends MenuRadioGroupElement {
     badge: string | undefined,
     template: HTMLTemplateElement | null
   ): MenuRadioItemElement {
-    const item = this.#createItemFromTemplate(template);
+    const item = this.createRadioItem(template);
 
     item.value = value;
     item.setAttribute('data-rendition', value);
     this.#setContent(item, label, tier, badge);
 
     return item;
-  }
-
-  #createItemFromTemplate(template: HTMLTemplateElement | null): MenuRadioItemElement {
-    if (!template) return document.createElement(MenuRadioItemElement.tagName) as MenuRadioItemElement;
-
-    const fragment = template.content.cloneNode(true) as DocumentFragment;
-    const root = fragment.firstElementChild;
-
-    if (!root || root.localName !== MenuRadioItemElement.tagName || root.nextElementSibling) {
-      return document.createElement(MenuRadioItemElement.tagName) as MenuRadioItemElement;
-    }
-
-    return root as MenuRadioItemElement;
   }
 
   #setContent(item: MenuRadioItemElement, label: string, tier: string | undefined, badge: string | undefined): void {
@@ -149,14 +160,6 @@ export class QualityRadioGroupElement extends MenuRadioGroupElement {
     if (!labelPart && !tierPart && !badgePart) {
       item.textContent = [label, tier, badge].filter(Boolean).join(' ');
     }
-  }
-
-  #getTemplate(): HTMLTemplateElement | null {
-    for (const child of this.children) {
-      if (child instanceof HTMLTemplateElement) return child;
-    }
-
-    return null;
   }
 
   #handleValueChange = (event: Event): void => {

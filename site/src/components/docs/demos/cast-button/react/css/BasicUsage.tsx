@@ -8,17 +8,11 @@ export default function BasicUsage() {
   return (
     <Player.Provider>
       <Player.Container className="media-container">
-        <HlsJsVideo
-          src="https://stream.mux.com/BV3YZtogl89mg9VcNBhhnHm02Y34zI1nlMuMQfAbl3dM.m3u8"
-          autoPlay
-          muted
-          playsInline
-          loop
-        />
+        <HlsJsVideo src="{{VJS10_DEMO_VIDEO_HLS}}" autoPlay muted playsInline loop />
         <CastButton
           className="media-cast-button"
           render={(props, state) => (
-            <button {...props}>{state.castState === 'connected' ? 'Stop casting' : 'Start casting'}</button>
+            <button {...props}>{state.connection === 'connected' ? 'Stop casting' : 'Start casting'}</button>
           )}
         />
       </Player.Container>

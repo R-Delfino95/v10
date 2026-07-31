@@ -2,8 +2,10 @@
 
 import { AudioTrackRadioGroupCore } from '@videojs/core';
 import { logMissingFeature, selectAudioTrack } from '@videojs/core/dom';
+import { translateText } from '@videojs/core/i18n';
 import { useCallback, useState } from 'react';
 
+import { useTranslator } from '../../i18n/context';
 import { usePlayer } from '../../player/context';
 
 export interface AudioTrackOptionsProps extends AudioTrackRadioGroupCore.Props {}
@@ -22,10 +24,17 @@ export interface AudioTrackOptionsResult {
   setValue: (value: string) => void;
 }
 
+/**
+ * Create audio track menu options from the player audio track state. Returns
+ * `null` when the audio track feature is not configured.
+ *
+ * @param props - Optional `label`, `formatTrack`, and `disabled` overrides.
+ */
 export function useAudioTrackOptions(props?: AudioTrackOptionsProps): AudioTrackOptionsResult | null {
   'use no memo';
 
   const media = usePlayer(selectAudioTrack);
+  const t = useTranslator();
   const [core] = useState(() => new AudioTrackRadioGroupCore());
 
   core.setProps(props ?? {});
@@ -45,7 +54,7 @@ export function useAudioTrackOptions(props?: AudioTrackOptionsProps): AudioTrack
     value: state.value,
     options: state.tracks.map((track) => ({
       value: track.value,
-      label: track.label,
+      label: translateText(track.label, t),
       disabled: state.disabled,
     })),
     disabled: state.disabled,

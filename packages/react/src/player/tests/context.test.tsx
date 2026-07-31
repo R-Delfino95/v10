@@ -1,10 +1,11 @@
-import { render, renderHook } from '@testing-library/react';
+import { cleanup, render, renderHook, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { createI18n } from '../../i18n/create-i18n';
 import { createMockStore } from '../../testing/mocks';
+import { Container } from '../container';
 import {
-  Container,
   PlayerContextProvider,
   type PlayerContextValue,
   useContainer,
@@ -16,6 +17,11 @@ import {
   usePlayer,
   usePlayerContext,
 } from '../context';
+
+afterEach(() => {
+  cleanup();
+  document.documentElement.removeAttribute('lang');
+});
 
 function createWrapper(value: PlayerContextValue) {
   return function Wrapper({ children }: { children: ReactNode }) {
@@ -227,6 +233,62 @@ describe('Container', () => {
     expect(container.querySelector('span')).toBeTruthy();
   });
 
+  it('provides a default accessible name', () => {
+    const value = createContextValue();
+
+    const { container } = render(
+      <PlayerContextProvider value={value}>
+        <Container />
+      </PlayerContextProvider>
+    );
+
+    const el = container.firstElementChild;
+    expect(el?.getAttribute('role')).toBe('group');
+    expect(el?.getAttribute('aria-label')).toBe('Media player');
+  });
+
+  it('translates the default accessible name', () => {
+    const value = createContextValue();
+    const { I18nProvider } = createI18n();
+    const { container } = render(
+      <I18nProvider locale="fr" translations={{ container: { label: 'Lecteur multimédia' } }}>
+        <PlayerContextProvider value={value}>
+          <Container />
+        </PlayerContextProvider>
+      </I18nProvider>
+    );
+
+    expect(container.firstElementChild?.getAttribute('aria-label')).toBe('Lecteur multimédia');
+  });
+
+  it('preserves explicit accessible naming', () => {
+    const value = createContextValue();
+
+    const { container } = render(
+      <PlayerContextProvider value={value}>
+        <Container aria-label="Video player" role="region" />
+      </PlayerContextProvider>
+    );
+
+    const el = container.firstElementChild;
+    expect(el?.getAttribute('role')).toBe('region');
+    expect(el?.getAttribute('aria-label')).toBe('Video player');
+  });
+
+  it('uses aria-labelledby instead of the default label when provided', () => {
+    const value = createContextValue();
+
+    const { container } = render(
+      <PlayerContextProvider value={value}>
+        <Container aria-labelledby="player-title" />
+      </PlayerContextProvider>
+    );
+
+    const el = container.firstElementChild;
+    expect(el?.getAttribute('aria-labelledby')).toBe('player-title');
+    expect(el?.hasAttribute('aria-label')).toBe(false);
+  });
+
   it('registers container element via setContainer', () => {
     const setContainer = vi.fn();
     const value = createContextValue({ setContainer });
@@ -268,5 +330,60 @@ describe('Container', () => {
     );
 
     expect(store.attach).not.toHaveBeenCalled();
+  });
+
+  it('does not create an i18n provider by default', async () => {
+    const value = createContextValue();
+    const loader = vi.fn(async (tag: string) => (tag === 'x-container' ? { Play: 'Container play' } : undefined));
+    const { useTranslator } = createI18n({ loader });
+
+    function Label() {
+      const t = useTranslator();
+      return <span>{t('Play')}</span>;
+    }
+
+    render(
+      <div lang="x-container">
+        <PlayerContextProvider value={value}>
+          <Container>
+            <Label />
+          </Container>
+        </PlayerContextProvider>
+      </div>
+    );
+
+    expect(screen.queryByText('Play')).not.toBeNull();
+    await Promise.resolve();
+    expect(loader).not.toHaveBeenCalled();
+  });
+
+  it('does not derive locale from container lang through an ancestor provider', async () => {
+    const value = createContextValue();
+    const loader = vi.fn(async (tag: string) => (tag === 'x-container' ? { Play: 'Container play' } : undefined));
+    const { I18nProvider, useTranslator } = createI18n({
+      loader,
+    });
+
+    function Label() {
+      const t = useTranslator();
+      return <span>{t('Play')}</span>;
+    }
+
+    render(
+      <I18nProvider>
+        <div lang="x-container">
+          <PlayerContextProvider value={value}>
+            <Container>
+              <Label />
+            </Container>
+          </PlayerContextProvider>
+        </div>
+      </I18nProvider>
+    );
+
+    expect(screen.queryByText('Play')).not.toBeNull();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByText('Container play')).toBeNull();
+    expect(loader).not.toHaveBeenCalledWith('x-container');
   });
 });

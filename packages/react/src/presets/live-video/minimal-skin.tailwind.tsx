@@ -1,3 +1,4 @@
+import { captionsText } from '@videojs/core/i18n/text/menu';
 import {
   bufferingIndicator,
   button,
@@ -14,10 +15,12 @@ import {
   poster,
   root,
   slider,
+  spacer,
 } from '@videojs/skins/minimal/tailwind/video.tailwind';
 import { isString } from '@videojs/utils/predicate';
 import { cn } from '@videojs/utils/style';
 import { type ComponentProps, type CSSProperties, forwardRef, type ReactNode } from 'react';
+import { useTranslator } from '@/i18n/context';
 import {
   AirPlayEnterIcon,
   AirPlayExitIcon,
@@ -38,7 +41,8 @@ import {
   VolumeLowIcon,
   VolumeOffIcon,
 } from '@/icons/minimal';
-import { Container, usePlayer } from '@/player/context';
+import { Container } from '@/player/container';
+import { usePlayer } from '@/player/context';
 import { AirPlayButton } from '@/ui/airplay-button';
 import { BufferingIndicator } from '@/ui/buffering-indicator';
 import { CaptionsButton } from '@/ui/captions-button';
@@ -124,10 +128,10 @@ function VolumePopover(): ReactNode {
   if (volumeUnsupported) return muteButton;
 
   return (
-    <Popover.Root openOnHover delay={200} closeDelay={100} side="top">
+    <Popover.Root openOnHover delay={200} closeDelay={100} side="right">
       <Popover.Trigger render={muteButton} />
       <Popover.Popup className={cn(popup.volume)}>
-        <VolumeSlider.Root orientation="vertical" thumbAlignment="edge" render={<SliderRoot />}>
+        <VolumeSlider.Root orientation="horizontal" thumbAlignment="edge" render={<SliderRoot />}>
           <VolumeSlider.Track render={<SliderTrack />}>
             <VolumeSlider.Fill render={<SliderFill />} />
           </VolumeSlider.Track>
@@ -139,6 +143,7 @@ function VolumePopover(): ReactNode {
 }
 
 function CaptionsTrigger(): ReactNode {
+  const t = useTranslator();
   const captions = useCaptionsOptions();
   if (!captions) return null;
 
@@ -179,7 +184,7 @@ function CaptionsTrigger(): ReactNode {
           className={menu.group}
           value={captions.value}
           onValueChange={captions.setValue}
-          aria-label="Captions"
+          aria-label={t(captionsText)}
         >
           {captions.options.map((option) => (
             <Menu.RadioItem key={option.value} className={menu.item} value={option.value} disabled={option.disabled}>
@@ -226,11 +231,11 @@ export function MinimalLiveVideoSkinTailwind(props: MinimalLiveVideoSkinProps): 
         <ErrorDialog.Popup className={error.root}>
           <div className={error.dialog}>
             <div className={error.content}>
-              <ErrorDialog.Title className={error.title}>Something went wrong.</ErrorDialog.Title>
+              <ErrorDialog.Title className={error.title}></ErrorDialog.Title>
               <ErrorDialog.Description className={error.description} />
             </div>
             <div className={error.actions}>
-              <ErrorDialog.Close className={cn(button.base, button.primary)}>OK</ErrorDialog.Close>
+              <ErrorDialog.Close className={cn(button.base, button.primary)}></ErrorDialog.Close>
             </div>
           </div>
         </ErrorDialog.Popup>
@@ -259,13 +264,13 @@ export function MinimalLiveVideoSkinTailwind(props: MinimalLiveVideoSkinProps): 
             </Tooltip.Root>
 
             <LiveButton className={cn(button.base, button.subtle, button.live)} />
+
+            <VolumePopover />
           </div>
 
-          <div className="grow" aria-hidden="true" />
+          <div className={spacer} aria-hidden="true" />
 
           <div className={buttonGroupEnd}>
-            <VolumePopover />
-
             <CaptionsTrigger />
 
             <Tooltip.Root side="top">
@@ -349,7 +354,7 @@ export function MinimalLiveVideoSkinTailwind(props: MinimalLiveVideoSkinProps): 
       <Gesture type="doubletap" action="toggleFullscreen" region="center" />
 
       {/* Input Feedback */}
-      <StatusAnnouncer />
+      <StatusAnnouncer className="sr-only" />
       <div className={inputFeedback.root}>
         <VolumeIndicator.Root
           className={cn(inputFeedback.island.base, inputFeedback.island.volume, inputFeedback.island.shownVolume)}
