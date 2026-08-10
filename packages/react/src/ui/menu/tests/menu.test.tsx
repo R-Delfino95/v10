@@ -850,6 +850,29 @@ describe('MenuContent', () => {
     });
   });
 
+  it('holds a controls visibility lock while a root menu is open', async () => {
+    const releaseControlsLock = vi.fn();
+    const requestControlsLock = vi.fn(() => releaseControlsLock);
+    const { Wrapper } = createPlayerWrapper({
+      userActive: true,
+      controlsVisible: true,
+      requestControlsLock,
+      toggleControls: vi.fn(),
+    });
+
+    render(<ControlsHiddenFixture visible onOpenChange={vi.fn()} />, { wrapper: Wrapper });
+
+    await waitFor(() => {
+      expect(requestControlsLock).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.click(screen.getByTestId('trigger'));
+
+    await waitFor(() => {
+      expect(releaseControlsLock).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('wires GroupLabel to Group with aria-labelledby', async () => {
     render(<GroupLabelFixture />);
 

@@ -19,6 +19,10 @@
     { "path": "packages/core" },
     { "path": "packages/core/src/dom" },
 
+    { "path": "packages/compiler" },
+
+    { "path": "packages/jsx" },
+
     { "path": "packages/skins" },
 
     { "path": "packages/spf" },

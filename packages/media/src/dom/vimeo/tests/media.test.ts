@@ -26,6 +26,7 @@ vi.mock('@vimeo/player', () => {
     getMuted = vi.fn(async () => false);
     getVolume = vi.fn(async () => 1);
     getDuration = vi.fn(async () => 60);
+    getVideoTitle = vi.fn(async () => 'Sample Video');
     getCurrentTime = vi.fn(async () => 0);
     getTextTracks = vi.fn(async () => [] as unknown[]);
     destroy = vi.fn(async () => {
@@ -83,6 +84,8 @@ async function attachAndLoad(media: VimeoMedia): Promise<{ iframe: HTMLIFrameEle
 
 interface MockPlayerLike {
   emit(event: string, data?: unknown): void;
+  getVideoTitle: ReturnType<typeof vi.fn>;
+  unload: ReturnType<typeof vi.fn>;
   play: ReturnType<typeof vi.fn>;
   pause: ReturnType<typeof vi.fn>;
   setVolume: ReturnType<typeof vi.fn>;
@@ -163,8 +166,8 @@ describe('buildVimeoIframeSrc', () => {
     expect(src).not.toContain('controls=0');
   });
 
-  it('forwards preload and Vimeo-specific config knobs', () => {
-    const src = buildVimeoIframeSrc('76979871', { preload: 'auto', config: { autopause: true } });
+  it('forwards preload and Vimeo-specific engine knobs', () => {
+    const src = buildVimeoIframeSrc('76979871', { preload: 'auto', source: { engine: { autopause: true } } });
     expect(src).toContain('preload=auto');
     expect(src).toContain('autopause=1');
   });
@@ -179,10 +182,16 @@ describe('buildVimeoIframeSrc', () => {
     expect(src).not.toContain('h=');
   });
 
-  it('merges arbitrary config into params', () => {
-    const src = buildVimeoIframeSrc('76979871', { config: { background: true, byline: false } });
+  it('merges arbitrary engine options into params', () => {
+    const src = buildVimeoIframeSrc('76979871', { source: { engine: { background: true, byline: false } } });
     expect(src).toContain('background=1');
     expect(src).toContain('byline=0');
+  });
+
+  it('lets engine options override derived params', () => {
+    const src = buildVimeoIframeSrc('76979871', { controls: false, source: { engine: { controls: true } } });
+    expect(src).toContain('controls=1');
+    expect(src).not.toContain('controls=0');
   });
 
   it('returns empty string for invalid src', () => {
@@ -231,6 +240,147 @@ describe('VimeoMedia', () => {
     events.length = 0;
     player.emit('timeupdate', { seconds: 1, duration: 60 });
     expect(events).toEqual([]);
+  });
+
+  it('exposes the video title in contentData once the embed loads', async () => {
+    const media = new VimeoMedia();
+    const iframe = createIframe();
+    media.attach(iframe);
+
+    // Nothing to report before the embed answers.
+    expect(media.contentData).toEqual({});
+
+    const player = media.engine as unknown as MockPlayerLike;
+    player.emit('loaded');
+    await waitForVimeoLoaded(media);
+
+    expect(media.contentData).toEqual({ title: 'Sample Video' });
+  });
+
+  it('clears contentData when the source changes', async () => {
+    const media = new VimeoMedia();
+    await attachAndLoad(media);
+
+    media.src = '12345';
+
+    expect(media.contentData).toEqual({});
+  });
+
+  it('clears state reported about the old video when the source is cleared', async () => {
+    const media = new VimeoMedia();
+    media.src = '76979871';
+    const { player } = await attachAndLoad(media);
+
+    // There is nothing to load, so the reset has to happen without one.
+    media.source = null;
+
+    expect(media.contentData).toEqual({});
+    expect(media.duration).toBeNaN();
+    // A running embed would write all of that back through its own events.
+    expect(player.unload).toHaveBeenCalled();
+  });
+
+  it('unblocks a pending play() when the source is replaced mid-load', async () => {
+    const media = new VimeoMedia();
+    media.src = '76979871';
+    const iframe = createIframe();
+    media.attach(iframe);
+    const player = media.engine as unknown as MockPlayerLike;
+
+    // Never loads, so `play()` is left waiting on the current load barrier.
+    const played = media.play();
+    media.src = '12345';
+
+    // Replacing the barrier without resolving it would hang this forever.
+    await played;
+    expect(player.play).toHaveBeenCalled();
+  });
+
+  it('does not settle the new load when a superseded one finishes', async () => {
+    const media = new VimeoMedia();
+    media.src = '76979871';
+    const iframe = createIframe();
+    media.attach(iframe);
+    const player = media.engine as unknown as MockPlayerLike;
+
+    // Hold the first load's metadata reads open, then supersede it.
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    player.getVideoTitle.mockImplementationOnce(async () => {
+      await held;
+      return 'First Video';
+    });
+    player.emit('loaded');
+    media.src = '12345';
+
+    let playing = false;
+    const played = media.play().then(() => {
+      playing = true;
+    });
+
+    // The superseded load finishing says nothing about the one now in progress.
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(playing).toBe(false);
+
+    player.emit('loaded');
+    await played;
+    expect(playing).toBe(true);
+    expect(media.contentData).toEqual({ title: 'Sample Video' });
+  });
+
+  it('settles the load for a src the player can never load', async () => {
+    const media = new VimeoMedia();
+    const iframe = createIframe();
+    media.attach(iframe);
+    const player = media.engine as unknown as MockPlayerLike;
+
+    media.src = 'not-a-vimeo-url';
+
+    // No `loaded` will ever arrive for it, so waiting on the load must not hang.
+    await media.play();
+    expect(player.loadVideo).not.toHaveBeenCalled();
+  });
+
+  it('ignores metadata that arrives after the source is cleared', async () => {
+    const media = new VimeoMedia();
+    media.src = '76979871';
+    const iframe = createIframe();
+    media.attach(iframe);
+    const player = media.engine as unknown as MockPlayerLike;
+
+    // Hold the metadata reads open so they resolve after the clear.
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    player.getVideoTitle.mockImplementationOnce(async () => {
+      await held;
+      return 'Sample Video';
+    });
+
+    player.emit('loaded');
+    media.source = null;
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(media.contentData).toEqual({});
+    expect(media.duration).toBeNaN();
+  });
+
+  it('omits the title when Vimeo reports none', async () => {
+    const media = new VimeoMedia();
+    const iframe = createIframe();
+    media.attach(iframe);
+
+    const player = media.engine as unknown as MockPlayerLike;
+    player.getVideoTitle.mockResolvedValueOnce('');
+    player.emit('loaded');
+    await waitForVimeoLoaded(media);
+
+    expect(media.contentData).toEqual({});
   });
 
   it('updates state from player events', async () => {
@@ -307,6 +457,93 @@ describe('VimeoMedia', () => {
     expect(player.loadVideo).toHaveBeenCalledWith({ url: 'https://player.vimeo.com/video/76979871' });
   });
 
+  it('derives src from a source object', () => {
+    const media = new VimeoMedia();
+    const sourcechange = vi.fn();
+    media.addEventListener('sourcechange', sourcechange);
+
+    media.source = { src: '76979871' };
+    expect(media.src).toBe('76979871');
+    expect(sourcechange).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves source engine options across a src change', () => {
+    const media = new VimeoMedia();
+    media.source = { src: '76979871', engine: { autopause: true } };
+
+    media.src = 'https://vimeo.com/12345';
+    expect(media.source).toEqual({ src: 'https://vimeo.com/12345', engine: { autopause: true } });
+  });
+
+  it('does not reload for a structurally equal source', async () => {
+    const media = new VimeoMedia();
+    const { player } = await attachAndLoad(media);
+    media.source = { src: '76979871', engine: { autopause: true } };
+    await Promise.resolve();
+
+    const sourcechange = vi.fn();
+    media.addEventListener('sourcechange', sourcechange);
+    player.loadVideo.mockClear();
+
+    media.source = { src: '76979871', engine: { autopause: true } };
+    await Promise.resolve();
+
+    // Assigning is always announced, but nothing reaches the Vimeo player.
+    expect(sourcechange).toHaveBeenCalledOnce();
+    expect(player.loadVideo).not.toHaveBeenCalled();
+    expect(media.src).toBe('76979871');
+  });
+
+  it('clears src when source is set to null', () => {
+    const media = new VimeoMedia();
+    media.source = { src: '76979871' };
+
+    media.source = null;
+    expect(media.source).toBe(null);
+    expect(media.src).toBe('');
+  });
+
+  it('carries engine options into the initial embed URL', () => {
+    const media = new VimeoMedia();
+    media.source = { src: '76979871', engine: { autopause: true } };
+
+    const iframe = createIframe();
+    media.attach(iframe);
+    expect(iframe.src).toContain('https://player.vimeo.com/video/76979871');
+    expect(iframe.src).toContain('autopause=1');
+  });
+
+  it('reloads when only engine options change', async () => {
+    const media = new VimeoMedia();
+    const { player } = await attachAndLoad(media);
+    media.source = { src: '76979871', engine: { autopause: true } };
+    await Promise.resolve();
+    player.loadVideo.mockClear();
+
+    // Same video, new embed options. They are read at load time, so the video
+    // has to be loaded again for them to take effect.
+    media.source = { src: '76979871', engine: { autopause: false } };
+    await Promise.resolve();
+
+    expect(player.loadVideo).toHaveBeenCalledWith({
+      url: 'https://player.vimeo.com/video/76979871',
+      autopause: false,
+    });
+  });
+
+  it('carries engine options into loadVideo options', async () => {
+    const media = new VimeoMedia();
+    const { player } = await attachAndLoad(media);
+    player.loadVideo.mockClear();
+
+    media.source = { src: '76979871', engine: { autopause: false } };
+    await Promise.resolve();
+    expect(player.loadVideo).toHaveBeenCalledWith({
+      url: 'https://player.vimeo.com/video/76979871',
+      autopause: false,
+    });
+  });
+
   it('forwards fullscreen and pip requests', async () => {
     const media = new VimeoMedia();
     const { player } = await attachAndLoad(media);
@@ -340,6 +577,19 @@ describe('VimeoMedia', () => {
     expect(played.length).toBe(1);
     expect(played.start(0)).toBe(0);
     expect(played.end(0)).toBe(3);
+  });
+
+  it('unblocks pending play() when detached before load completes', async () => {
+    const media = new VimeoMedia();
+    const iframe = createIframe();
+    media.attach(iframe);
+
+    // Await load without the player ever emitting `loaded`.
+    const pending = media.play();
+    media.detach();
+
+    await expect(pending).resolves.toBeUndefined();
+    expect(media.engine).toBe(null);
   });
 
   it('destroys the player on detach', () => {

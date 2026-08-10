@@ -38,13 +38,16 @@ function defineElement(tagName: string, Base: CustomElementConstructor): void {
   }
 }
 
-function createControlsStore(): AnyPlayerStore {
+function createControlsStore(
+  requestControlsLock: MediaControlsState['requestControlsLock'] = () => () => {}
+): AnyPlayerStore {
   return createStore<unknown>()<MediaControlsState>({
     name: 'controls',
     state: ({ get, set }) => {
       return {
         userActive: true,
         controlsVisible: true,
+        requestControlsLock,
         toggleControls() {
           const visible = !(get().controlsVisible as boolean);
 
@@ -58,7 +61,9 @@ function createControlsStore(): AnyPlayerStore {
 }
 
 class TestPlayerProviderElement extends MediaElement {
-  store = createControlsStore();
+  readonly releaseControlsLock = vi.fn();
+  readonly requestControlsLock = vi.fn(() => this.releaseControlsLock);
+  store = createControlsStore(this.requestControlsLock);
 
   readonly #provider = new ContextProvider(this, { context: playerContext, initialValue: this.store });
 
@@ -140,6 +145,53 @@ describe('MenuElement', () => {
     await root.updateComplete;
 
     expect(root.getAttribute('data-side')).toBe('bottom');
+  });
+
+  it('resizes the menu view when the positioning boundary changes', async () => {
+    const trigger = document.createElement('button');
+    const root = createElement(MenuElement);
+    const view = createElement(MenuViewElement);
+    let boundaryWidth = 300;
+
+    root.id = 'menu';
+    root.open = true;
+    root.side = 'top';
+    root.boundary = 'viewport';
+    trigger.setAttribute('commandfor', root.id);
+    view.setAttribute('data-menu-root-view', '');
+    view.setAttribute('data-menu-view', '');
+
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 100, 40, 20));
+    vi.spyOn(root, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 260, 80));
+    vi.spyOn(document.documentElement, 'getBoundingClientRect').mockImplementation(
+      () => new DOMRect(0, 0, boundaryWidth, 300)
+    );
+    vi.spyOn(view, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 260, 80));
+    Object.defineProperty(root, 'offsetWidth', { configurable: true, value: 260 });
+    Object.defineProperty(root, 'offsetHeight', { configurable: true, value: 80 });
+    Object.defineProperty(root, 'scrollHeight', { configurable: true, value: 80 });
+    Object.defineProperty(view, 'scrollWidth', { configurable: true, value: 260 });
+    Object.defineProperty(view, 'scrollHeight', { configurable: true, value: 80 });
+
+    root.append(view);
+    document.body.append(trigger, root);
+    await root.updateComplete;
+
+    await waitForAssertion(() => {
+      expect(root.style.getPropertyValue('--media-menu-width')).toBe('260px');
+    });
+    await nextFrame();
+    await root.updateComplete;
+
+    // Isolate positioner-driven sizing from unrelated reactive updates.
+    vi.spyOn(root, 'requestUpdate').mockImplementation(() => {});
+    boundaryWidth = 180;
+    window.dispatchEvent(new Event('resize'));
+
+    await waitForAssertion(() => {
+      expect(root.style.getPropertyValue('--media-popover-available-width')).toBe('180px');
+      expect(root.style.getPropertyValue('--media-menu-width')).toBe('180px');
+    });
   });
 
   it('scopes menu state data attributes to menu elements', async () => {
@@ -758,5 +810,29 @@ describe('MenuElement', () => {
       expect.objectContaining({ detail: expect.objectContaining({ open: false, reason: 'imperative-action' }) })
     );
     expect(focus).not.toHaveBeenCalled();
+  });
+
+  it('holds a controls visibility lock while a root menu is open', async () => {
+    const provider = document.createElement('test-menu-player-provider') as TestPlayerProviderElement;
+    const root = createElement(MenuElement);
+
+    root.open = true;
+    provider.append(root);
+    document.body.append(provider);
+
+    await root.updateComplete;
+
+    expect(root.hasAttribute('data-open')).toBe(true);
+
+    await waitForAssertion(() => {
+      expect(provider.requestControlsLock).toHaveBeenCalledTimes(1);
+    });
+
+    root.open = false;
+    await root.updateComplete;
+
+    await waitForAssertion(() => {
+      expect(provider.releaseControlsLock).toHaveBeenCalledTimes(1);
+    });
   });
 });

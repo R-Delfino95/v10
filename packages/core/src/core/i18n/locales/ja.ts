@@ -81,6 +81,7 @@ export default {
     source:
       'サーバーまたはネットワークのエラー、またはフォーマットがサポートされていないため、動画をロードできませんでした',
     encrypted: 'メディアは暗号化されており、解読するためのキーがありません。',
+    unplayable: 'このメディアはメディアプレイヤーでサポートされていません。',
     title: '問題が発生しました。',
     unexpected: 'エラーが発生しました。再度お試しください。',
   },
@@ -94,7 +95,7 @@ export default {
     audio: '音声',
     default: 'デフォルト',
     speed: '速度',
-    captions: 'キャプション',
+    captions: '字幕',
     playbackRate: '再生速度',
     back: '戻る',
     off: 'オフ',

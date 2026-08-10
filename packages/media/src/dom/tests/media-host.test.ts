@@ -18,6 +18,12 @@ class VolumeOverride implements MediaComponent {
   }
 }
 
+class ContentDataOverride implements MediaComponent {
+  get targetOverride() {
+    return { contentData: { title: 'Component title' } };
+  }
+}
+
 class AttachTracking implements MediaComponent {
   attach = vi.fn();
   detach = vi.fn();
@@ -89,6 +95,21 @@ describe('HTMLMediaElementHost', () => {
       const host = new HTMLAudioElementHost();
       expect(host.paused).toBe(true);
       expect(host.muted).toBe(false);
+      expect(host.contentData).toBeUndefined();
+    });
+
+    it('reads content data independently from the legacy title property', () => {
+      const host = new HTMLAudioElementHost();
+      const audio = document.createElement('audio');
+      audio.title = 'Legacy title';
+      host.attach(audio);
+
+      expect(host.contentData).toBeUndefined();
+
+      addMediaComponent(host, new ContentDataOverride());
+
+      expect(host.contentData).toEqual({ title: 'Component title' });
+      expect(host.title).toBe('Legacy title');
     });
 
     it('writes setter values to the override when it owns the property', () => {
@@ -197,25 +218,21 @@ describe('HTMLMediaElementHost', () => {
     });
   });
 
-  describe('config', () => {
-    it('returns the same object that was assigned', () => {
-      const host = new HTMLAudioElementHost();
-      const value = { hlsJs: { debug: true }, a: 2 };
+  it('forwards contentdatachange from the attached media target', () => {
+    const host = new HTMLAudioElementHost();
+    const audio = document.createElement('audio') as HTMLAudioElement & {
+      contentData: Record<string, string | null>;
+    };
+    audio.contentData = { title: null };
+    const listener = vi.fn();
 
-      host.config = value;
+    host.attach(audio);
+    host.addEventListener('contentdatachange', listener);
 
-      expect(host.config).toBe(value);
-    });
+    audio.contentData = { title: 'Media title' };
+    audio.dispatchEvent(new Event('contentdatachange'));
 
-    it('replaces the entire config object on set', () => {
-      const host = new HTMLAudioElementHost();
-
-      host.config = { a: 1 };
-      host.config = { b: 2 };
-
-      // A new object replaces the old one wholesale; prior keys are dropped.
-      expect(host.config.a).toBeUndefined();
-      expect(host.config.b).toBe(2);
-    });
+    expect(listener).toHaveBeenCalledOnce();
+    expect(host.contentData).toEqual({ title: 'Media title' });
   });
 });

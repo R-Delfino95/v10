@@ -207,6 +207,67 @@ for (const { name, path } of UI_VIDEO_PAGES) {
       await expect.poll(() => getMediaVolume(page)).toBeLessThan(0.5);
     });
 
+    test('controls remain visible while the settings menu is open', async ({ page }) => {
+      await player.play();
+      await player.showControls();
+      await player.settingsButton.click();
+      await expect(player.settingsSpeedItem).toBeVisible();
+
+      await page.waitForTimeout(2_500);
+
+      await expect(player.controls).toHaveAttribute(DATA_ATTRS.visible, '');
+      await expect(player.settingsSpeedItem).toBeVisible();
+    });
+
+    test('controls remain visible during a stationary time slider drag', async ({ page }) => {
+      await player.play();
+      await player.showControls();
+
+      const box = await player.timeSlider.boundingBox();
+      if (!box) throw new Error('Time slider not visible');
+
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+
+      try {
+        await expect(player.timeSlider).toHaveAttribute(DATA_ATTRS.dragging, '');
+        await page.waitForTimeout(2_500);
+
+        await expect(player.controls).toHaveAttribute(DATA_ATTRS.visible, '');
+        await expect(player.timeSlider).toHaveAttribute(DATA_ATTRS.dragging, '');
+      } finally {
+        await page.mouse.up();
+      }
+    });
+
+    test('settings button shows its tooltip on focus and still opens the menu', async ({ page }) => {
+      await player.showControls();
+      await player.settingsButton.focus();
+
+      await expect(player.settingsTooltip).toHaveAttribute(DATA_ATTRS.open, '', { timeout: 2_000 });
+
+      const playerBox = await player.playerRoot.boundingBox();
+      const triggerBox = await player.settingsButton.boundingBox();
+      const tooltipBox = await player.settingsTooltip.boundingBox();
+      if (!playerBox || !triggerBox || !tooltipBox) throw new Error('Settings tooltip not visible');
+      expect(tooltipBox.x).toBeGreaterThanOrEqual(playerBox.x);
+      expect(tooltipBox.y).toBeGreaterThanOrEqual(playerBox.y);
+      expect(tooltipBox.x + tooltipBox.width).toBeLessThanOrEqual(playerBox.x + playerBox.width);
+      expect(tooltipBox.y + tooltipBox.height).toBeLessThanOrEqual(playerBox.y + playerBox.height);
+      expect(tooltipBox.y + tooltipBox.height).toBeLessThanOrEqual(triggerBox.y);
+      expect(tooltipBox.y + tooltipBox.height).toBeGreaterThanOrEqual(triggerBox.y - 16);
+
+      await player.settingsButton.click();
+      await expect(player.settingsSpeedItem).toBeVisible();
+      await expect(player.settingsTooltip).not.toBeVisible();
+
+      await page.waitForTimeout(500);
+      await expect(player.settingsSpeedItem).toBeVisible();
+
+      await page.waitForTimeout(700);
+      await expect(player.settingsTooltip).not.toBeVisible();
+    });
+
     test('buffering indicator follows waiting state', async ({ page }) => {
       await player.play();
       await page.evaluate((selector) => {

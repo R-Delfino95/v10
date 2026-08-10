@@ -1,8 +1,8 @@
-import { shallowEqual } from '@videojs/utils/object';
+import { deepEqual } from '@videojs/utils/object';
 import Hls, { type HlsConfig as HlsJsConfig } from 'hls.js';
 import { bridgeEvents } from '../../core/bridge-events';
+
 import { type MediaStreamType, MediaStreamTypes } from '../../core/types';
-import type { MediaConfig } from '../media-host';
 import { NativeHlsMedia } from '../native-hls';
 import { HTMLVideoElementHost } from '../video-host';
 import { HlsJsOnlyMedia } from './hls-js-only';
@@ -29,27 +29,45 @@ export const StreamTypes = MediaStreamTypes;
 
 export interface HlsMediaProps {
   src: string;
+  source: HlsSource | null;
   preload: PreloadType;
   streamType: StreamType;
-  config?: HlsMediaConfig;
 }
 
-export interface HlsMediaConfig extends MediaConfig {
+/**
+ * Structured HLS source: which source to play, plus how to play it.
+ *
+ * `preferPlayback` and `engine` are both read when the engine is constructed, so
+ * changing either recreates it.
+ */
+export interface HlsSource {
+  /** Manifest URL. Mirrors the host's `src` property. */
+  src?: string | undefined;
+  /** MIME type of the source. Takes precedence over inference from `src`. */
+  type?: SourceType | undefined;
+  /**
+   * Preferred playback path: `'mse'` for hls.js, `'native'` for the browser's
+   * own HLS support. Ignored when the preferred path cannot play the source.
+   */
   preferPlayback?: PlaybackType | undefined;
-  contentType?: SourceType | undefined;
-  hlsJs?: Partial<HlsJsConfig>;
+  /**
+   * hls.js's own configuration, passed through untouched. DRM-protected
+   * playback is configured here, through `emeEnabled` and `drmSystems`.
+   */
+  engine?: Partial<HlsJsConfig> | undefined;
 }
 
 export const hlsMediaDefaultProps: HlsMediaProps = {
   src: '',
+  source: null,
   preload: 'metadata',
   streamType: MediaStreamTypes.UNKNOWN,
-  config: {},
 };
 
 class HlsMediaEvent extends Event {}
 
 /**
+ * @fires sourcechange - Fired when `source` changes, either directly or by resolving a new `src`. Read `source` for the new value.
  * @fires streamtypechange - Fired when the detected stream type changes. Read `streamType` for the new value.
  * @fires targetlivewindowchange - Fired when the target live window changes. Read `targetLiveWindow` for the new value.
  */
@@ -57,6 +75,7 @@ export class HlsJsMedia extends HTMLVideoElementHost implements HlsMediaProps {
   #delegate: HlsJsOnlyMedia | NativeHlsMedia | null = null;
   #mediaElement: HTMLVideoElement | null = null;
   #src = hlsMediaDefaultProps.src;
+  #source: HlsSource | null = hlsMediaDefaultProps.source;
   #preload = hlsMediaDefaultProps.preload;
   #streamType: StreamType = hlsMediaDefaultProps.streamType;
   #isUserStreamType = false;
@@ -97,20 +116,6 @@ export class HlsJsMedia extends HTMLVideoElementHost implements HlsMediaProps {
     return this.#delegate?.engine ?? null;
   }
 
-  /**
-   * Playback configuration: a preferred playback path, an explicit content
-   * type, and options forwarded to hls.js. Reassigning reloads the engine when
-   * an engine-relevant option changes.
-   */
-  get config(): HlsMediaConfig {
-    return super.config;
-  }
-
-  set config(config: HlsMediaConfig) {
-    super.config = config;
-    if (this.#shouldEngineUpdate(this.#engineConfigKey())) this.#requestLoad();
-  }
-
   get error() {
     return this.#delegate?.error ?? null;
   }
@@ -135,13 +140,62 @@ export class HlsJsMedia extends HTMLVideoElementHost implements HlsMediaProps {
     return this.#delegate instanceof HlsJsOnlyMedia ? this.#delegate.audioRenditions : undefined;
   }
 
+  /**
+   * Media source URL. Assigning it replaces the identity half of `source` and
+   * leaves `type` and `engine` intact, so changing the URL never disturbs engine
+   * configuration.
+   */
   get src() {
     return this.#src;
   }
 
   set src(src: string) {
+    // `src` says which source to play; every other field says how to play it, so
+    // they carry over.
+    const { type, preferPlayback, engine } = this.#source ?? {};
+    const next: HlsSource = {
+      ...(type && { type }),
+      ...(preferPlayback && { preferPlayback }),
+      ...(engine && { engine }),
+      ...(src && { src }),
+    };
+
+    // Everything happens in the `source` setter, so there is one path for storing
+    // it, deciding on a load, and dispatching `sourcechange`.
+    this.source = Object.keys(next).length > 0 ? next : null;
+  }
+
+  /**
+   * Structured source: what to play (`src`, an optional `type`) plus how to play
+   * it (`preferPlayback`, `engine`). Assigning it derives `src`.
+   *
+   * Sources are compared structurally, so reassigning an equivalent object — an
+   * inline React prop, for instance — is a no-op. Only a change under `engine`
+   * (or a change to the resolved content type) recreates the playback engine.
+   */
+  get source(): HlsSource | null {
+    return this.#source;
+  }
+
+  set source(value: HlsSource | null) {
+    const source = value ?? null;
+    // Changing anything takes a new object, so handing the same one back costs
+    // nothing.
+    if (source === this.#source) return;
+
+    const src = source?.src ?? '';
+    const srcChanged = this.#src !== src;
+
+    this.#source = source;
     this.#src = src;
-    this.#requestLoad();
+
+    // Assigning is always a source change, so it is always announced.
+    this.dispatchEvent(new Event('sourcechange'));
+
+    // Only reload for something playback depends on. Subclasses add params that
+    // describe images rather than the stream — Mux's `poster` and `storyboard` —
+    // and changing one of those must not restart what is already playing.
+    if (srcChanged || this.#shouldEngineUpdate(this.#engineConfigKey())) this.#requestLoad();
   }
 
   /** Preload type (`'none'` / `'metadata'` / `'auto'`). */
@@ -206,11 +260,18 @@ export class HlsJsMedia extends HTMLVideoElementHost implements HlsMediaProps {
       this.#engineDestroy();
       this.#prevEngineConfigKey = this.#engineConfigKey();
 
-      const contentType = this.config.contentType ?? inferContentType(this.#src);
-      const useMse =
-        Hls.isSupported() && contentType === ContentTypes.M3U8 && this.config.preferPlayback !== PlaybackTypes.NATIVE;
+      // Read the stored source, not the `source` getter: subclasses override the
+      // getter to return what was assigned to them, while the fields below come
+      // from what they resolved and handed down (Mux fills in `engine` here).
+      const { type, preferPlayback, engine } = this.#source ?? {};
+      const contentType = type ?? inferContentType(this.src);
+      const useMse = Hls.isSupported() && contentType === ContentTypes.M3U8 && preferPlayback !== PlaybackTypes.NATIVE;
 
-      this.#delegate = useMse ? new HlsJsOnlyMedia({ config: { ...this.config?.hlsJs } }) : new NativeHlsMedia();
+      if (__DEV__ && !useMse && engine?.emeEnabled) {
+        console.warn('[vjs-drm] DRM playback requires the hls.js (MSE) engine; native HLS playback ignores it.');
+      }
+
+      this.#delegate = useMse ? new HlsJsOnlyMedia({ config: { ...engine } }) : new NativeHlsMedia();
 
       bridgeEvents(this.#delegate, this);
 
@@ -229,7 +290,7 @@ export class HlsJsMedia extends HTMLVideoElementHost implements HlsMediaProps {
 
     if (this.#delegate) {
       this.dispatchEvent(new HlsMediaEvent('loadstart'));
-      this.#delegate.src = this.#src;
+      this.#delegate.src = this.src;
     }
   }
 
@@ -245,15 +306,18 @@ export class HlsJsMedia extends HTMLVideoElementHost implements HlsMediaProps {
   }
 
   #shouldEngineUpdate(nextEngineConfigKey: Record<string, any>) {
-    return !shallowEqual(this.#prevEngineConfigKey, nextEngineConfigKey);
+    return !deepEqual(this.#prevEngineConfigKey, nextEngineConfigKey);
   }
 
+  /**
+   * Every value the engine is constructed from. Compared structurally, so an
+   * equivalent `source.engine` never triggers a rebuild — including nested
+   * options like `drmSystems`, which a flat comparison would see as changed
+   * whenever the object identity did.
+   */
   #engineConfigKey() {
-    return {
-      ...this.config.hlsJs,
-      preferPlayback: this.config.preferPlayback,
-      contentType: this.config.contentType ?? inferContentType(this.#src),
-    };
+    const { type, preferPlayback, engine } = this.#source ?? {};
+    return { engine, preferPlayback, contentType: type ?? inferContentType(this.src) };
   }
 
   #engineDestroy() {

@@ -1,11 +1,17 @@
 'use client';
 
 import { MenuCore, MenuDataAttrs } from '@videojs/core';
-import { createMenu, createTransition, type MenuChangeDetails, type PositioningBoundary } from '@videojs/core/dom';
+import {
+  createMenu,
+  createTransition,
+  type MenuChangeDetails,
+  type PositioningBoundary,
+  selectControls,
+} from '@videojs/core/dom';
 import { useSnapshot } from '@videojs/store/react';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { useOptionalContainer, useOptionalPopupGroup } from '../../player/context';
+import { useOptionalContainer, useOptionalPlayer, useOptionalPopupGroup } from '../../player/context';
 import { useDestroy } from '../../utils/use-destroy';
 import { useLatestRef } from '../../utils/use-latest-ref';
 import { useSafeId } from '../../utils/use-safe-id';
@@ -36,6 +42,7 @@ export function MenuRoot({
   // a submenu: no popover positioning, Trigger acts as a parent item.
   const parentMenu = useOptionalMenuContext();
   const controls = useOptionalControlsContext();
+  const controlsState = useOptionalPlayer(selectControls);
   const container = useOptionalContainer();
   const popupGroup = useOptionalPopupGroup();
   const isSubmenu = parentMenu !== null;
@@ -99,6 +106,13 @@ export function MenuRoot({
   useDestroy(menu);
 
   const input = useSnapshot(menu.input);
+
+  useEffect(() => {
+    if (!input.active || isSubmenu) return;
+
+    return controlsState?.requestControlsLock();
+  }, [controlsState?.requestControlsLock, input.active, isSubmenu]);
+
   const preferredState = useMemo(() => {
     core.setProps({ side, align, closeOnEscape, closeOnOutsideClick, isSubmenu });
     core.setInput(input);

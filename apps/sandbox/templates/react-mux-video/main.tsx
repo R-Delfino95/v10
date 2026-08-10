@@ -35,6 +35,10 @@ function App() {
   const preload = usePreload();
   const Provider = live ? LiveVideoProvider : VideoProvider;
 
+  // A source carrying signed tokens has no room in a plain `src`. A Mux
+  // `drm.token` becomes the FairPlay / Widevine / PlayReady license servers.
+  const { source: muxSource, url } = SOURCES[source];
+
   return (
     <SandboxI18nProvider>
       <Provider>
@@ -48,7 +52,7 @@ function App() {
         >
           {/* The storyboard track is derived automatically from the Mux src. */}
           <MuxVideo
-            src={SOURCES[source].url}
+            {...(muxSource ? { source: muxSource } : { src: url ?? '' })}
             autoPlay={autoplay}
             muted={muted}
             loop={loop}

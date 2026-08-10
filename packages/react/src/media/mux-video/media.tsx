@@ -11,14 +11,19 @@ import { useComposedRefs } from '../../utils/use-composed-refs';
 import { useMediaInstance } from '../../utils/use-media-instance';
 import { useSyncProps } from '../../utils/use-sync-props';
 
+// `source` comes from `MuxMediaProps` only: `MuxSource` extends `HlsSource` with
+// Mux identity fields, so the narrower type has to win.
 export interface MuxVideoProps
   extends Omit<VideoHTMLAttributes<HTMLVideoElement>, keyof HlsMediaProps | keyof MuxMediaProps>,
-    Partial<HlsMediaProps>,
+    Partial<Omit<HlsMediaProps, 'source'>>,
     Partial<MuxMediaProps> {
   children?: ReactNode;
 }
 
-const muxVideoDefaultProps: HlsMediaProps & MuxMediaProps = { ...hlsMediaDefaultProps, ...muxMediaDefaultProps };
+const muxVideoDefaultProps: Omit<HlsMediaProps, 'source'> & MuxMediaProps = {
+  ...hlsMediaDefaultProps,
+  ...muxMediaDefaultProps,
+};
 
 export const MuxVideo = forwardRef<HTMLVideoElement, MuxVideoProps>(function MuxVideo({ children, ...props }, ref) {
   const media = useMediaInstance(MuxMedia);
@@ -67,7 +72,8 @@ function MuxStoryboard({ media }: { media: MuxMedia }) {
   );
 
   // The stream type is detected at runtime and live streams have no storyboard.
-  const getSnapshot = () => (media.streamType === StreamTypes.LIVE ? '' : media.storyboard);
+  // The '' fallback keeps the snapshot a string rather than sometimes undefined.
+  const getSnapshot = () => (media.streamType === StreamTypes.LIVE ? '' : (media.contentData.storyboard ?? ''));
   const src = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
   if (!src) return null;

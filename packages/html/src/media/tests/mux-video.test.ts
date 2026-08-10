@@ -14,13 +14,26 @@ afterEach(() => {
 });
 
 describe('MuxVideo', () => {
-  it('exposes the element config as a property, not an attribute', () => {
+  it('exposes the element source as a property, not an attribute', () => {
     const el = createMuxVideo();
 
-    el.config = { preferPlayback: 'native' };
+    el.source = { playbackId: 'abc123', preferPlayback: 'native' };
 
-    expect(el.config.preferPlayback).toBe('native');
-    expect(el.hasAttribute('config')).toBe(false);
+    expect(el.source?.preferPlayback).toBe('native');
+    expect(el.hasAttribute('source')).toBe(false);
+  });
+
+  it('keeps engine options when the src attribute changes', () => {
+    const el = createMuxVideo();
+
+    el.source = { playbackId: 'abc123', preferPlayback: 'native', engine: { maxBufferLength: 60 } };
+    el.setAttribute('src', 'https://stream.mux.com/other.m3u8');
+
+    expect(el.source).toEqual({
+      playbackId: 'other',
+      preferPlayback: 'native',
+      engine: { maxBufferLength: 60 },
+    });
   });
 
   it('parses the host source from the src attribute', () => {
@@ -71,13 +84,12 @@ describe('MuxVideo', () => {
     );
   });
 
-  it('prefers the storyboard attribute over the derived URL', () => {
+  it('adds no storyboard track for signed playback without a storyboard token', () => {
     const el = createMuxVideo();
 
-    el.setAttribute('storyboard', 'https://image.mux.com/other/storyboard.vtt?token=jwt');
-    el.setAttribute('src', 'https://stream.mux.com/abc123.m3u8');
+    el.source = { playbackId: 'abc123', playback: { token: 'jwt' } };
 
-    expect(el.querySelector('track')?.getAttribute('src')).toBe('https://image.mux.com/other/storyboard.vtt?token=jwt');
+    expect(el.querySelector('track')).toBeNull();
   });
 
   it('removes the storyboard track when the src is cleared', () => {
@@ -148,12 +160,106 @@ describe('MuxVideo', () => {
     expect(el.host.src).toBe('');
   });
 
-  it('exposes the effective thumbnail URL without touching the media poster', () => {
+  it('does not sync source.poster to the media poster', () => {
     const el = createMuxVideo();
 
-    el.source = { playbackId: 'abc123', thumbnail: { time: 5, ext: 'webp' } };
+    el.source = { playbackId: 'abc123', poster: { time: 5, ext: 'jpg' } };
 
-    expect(el.thumbnail).toBe('https://image.mux.com/abc123/thumbnail.webp?time=5');
-    expect(el.shadowRoot!.querySelector('video')?.getAttribute('poster')).toBeNull();
+    expect(el.host.poster).toBe('');
+  });
+
+  it('exposes the content data on the element', () => {
+    const el = createMuxVideo();
+
+    el.setAttribute('src', 'https://stream.mux.com/abc123.m3u8');
+    el.setAttribute('poster-time', '12');
+
+    expect(el.contentData).toEqual({
+      poster: 'https://image.mux.com/abc123/thumbnail.webp?time=12',
+      storyboard: 'https://image.mux.com/abc123/storyboard.vtt?format=webp',
+    });
+  });
+
+  it('reflects the poster-time attribute to source.poster.time', () => {
+    const el = createMuxVideo();
+
+    el.setAttribute('src', 'https://stream.mux.com/abc123.m3u8');
+    el.setAttribute('poster-time', '12');
+
+    expect(el.host.source?.poster?.time).toBe(12);
+  });
+
+  it('does not build a source from poster-time alone', () => {
+    const el = createMuxVideo();
+
+    el.setAttribute('poster-time', '12');
+
+    // A poster-only source has no URL to play, and assigning one would schedule a
+    // load. The attribute is re-applied once a real source arrives.
+    expect(el.host.source).toBeNull();
+  });
+
+  it('reflects poster-time set before the src', () => {
+    const el = createMuxVideo();
+
+    el.setAttribute('poster-time', '12');
+    el.setAttribute('src', 'https://stream.mux.com/abc123.m3u8');
+
+    // Mux identity comes from the URL and carries no poster params over, so the
+    // attribute has to be re-applied after the source changes.
+    expect(el.host.source?.poster?.time).toBe(12);
+  });
+
+  it('keeps poster-time across a source change', () => {
+    const el = createMuxVideo();
+
+    el.setAttribute('poster-time', '12');
+    el.setAttribute('src', 'https://stream.mux.com/abc123.m3u8');
+    el.setAttribute('src', 'https://stream.mux.com/xyz789.m3u8');
+
+    expect(el.host.source).toEqual({ playbackId: 'xyz789', poster: { time: 12 } });
+  });
+
+  it('clears source.poster.time when poster-time is removed', () => {
+    const el = createMuxVideo();
+
+    el.setAttribute('src', 'https://stream.mux.com/abc123.m3u8');
+    el.setAttribute('poster-time', '12');
+    el.removeAttribute('poster-time');
+
+    expect(el.host.source).toEqual({ playbackId: 'abc123' });
+  });
+
+  it('leaves a source.poster.time set through JS alone', () => {
+    const el = createMuxVideo();
+
+    el.source = { playbackId: 'abc123', poster: { time: 5 } };
+    el.setAttribute('src', 'https://stream.mux.com/xyz789.m3u8');
+
+    // No `poster-time` attribute means no opinion, not "clear it". The value is
+    // only dropped because Mux identity changed, matching every other poster param.
+    expect(el.host.source).toEqual({ playbackId: 'xyz789' });
+
+    el.source = { playbackId: 'abc123', poster: { time: 5 } };
+    expect(el.host.source?.poster?.time).toBe(5);
+  });
+
+  it('keeps an existing poster time when poster-time is not a number', () => {
+    const el = createMuxVideo();
+
+    el.source = { playbackId: 'abc123', poster: { time: 5 } };
+    el.setAttribute('poster-time', 'soon');
+
+    // Invalid is not the same as removed, so the JS-set value survives.
+    expect(el.host.source?.poster?.time).toBe(5);
+  });
+
+  it('ignores a non-numeric poster-time', () => {
+    const el = createMuxVideo();
+
+    el.setAttribute('src', 'https://stream.mux.com/abc123.m3u8');
+    el.setAttribute('poster-time', 'soon');
+
+    expect(el.host.source?.poster?.time).toBeUndefined();
   });
 });

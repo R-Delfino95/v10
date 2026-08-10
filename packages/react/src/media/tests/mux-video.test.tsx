@@ -1,51 +1,75 @@
 import { render } from '@testing-library/react';
 import { HlsJsMedia } from '@videojs/media/dom/hls-js';
 import { MuxMedia } from '@videojs/media/dom/mux';
+import type { ReactElement } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { MuxVideo } from '../mux-video';
 
-describe('MuxVideo', () => {
-  it('does not spread the config prop onto the element', () => {
-    const { container } = render(<MuxVideo config={{ preferPlayback: 'native' }} />);
+/**
+ * Render and capture the host instance the `source` prop was written to, so
+ * assertions can read the derived `src` off the real media rather than spying on
+ * whichever internal setter happens to write it.
+ */
+function renderWithMedia(ui: ReactElement) {
+  const source = vi.spyOn(MuxMedia.prototype, 'source', 'set');
+  const result = render(ui);
+  const media = source.mock.contexts[0] as MuxMedia;
+  source.mockRestore();
+  return { ...result, media };
+}
 
-    // The config prop is consumed by the media, not spread onto the element.
-    expect(container.querySelector('video')!.hasAttribute('config')).toBe(false);
+describe('MuxVideo', () => {
+  it('does not spread the source prop onto the element', () => {
+    const { container } = render(<MuxVideo source={{ playbackId: 'abc123', preferPlayback: 'native' }} />);
+
+    // The source prop is consumed by the media, not spread onto the element.
+    expect(container.querySelector('video')!.hasAttribute('source')).toBe(false);
+  });
+
+  it('does not rewrite src when an equivalent source object is re-rendered', () => {
+    const src = vi.spyOn(HlsJsMedia.prototype, 'src', 'set');
+
+    const { rerender } = render(<MuxVideo source={{ playbackId: 'abc123', preferPlayback: 'native' }} />);
+    src.mockClear();
+
+    // A fresh object literal every render must be absorbed by the structural guard.
+    rerender(<MuxVideo source={{ playbackId: 'abc123', preferPlayback: 'native' }} />);
+
+    expect(src).not.toHaveBeenCalled();
+
+    src.mockRestore();
   });
 
   it('derives the media src from the source prop', () => {
-    const src = vi.spyOn(HlsJsMedia.prototype, 'src', 'set');
+    const { media } = renderWithMedia(<MuxVideo source={{ playbackId: 'abc123' }} />);
 
-    render(<MuxVideo source={{ playbackId: 'abc123' }} />);
-
-    expect(src).toHaveBeenCalledWith('https://stream.mux.com/abc123.m3u8');
-
-    src.mockRestore();
+    expect(media.src).toBe('https://stream.mux.com/abc123.m3u8');
   });
 
   it('applies the customDomain and playback params to src', () => {
-    const src = vi.spyOn(HlsJsMedia.prototype, 'src', 'set');
-
-    render(
+    const { media } = renderWithMedia(
       <MuxVideo source={{ playbackId: 'abc123', customDomain: 'example.com', playback: { maxResolution: '1080p' } }} />
     );
 
-    const url = new URL(src.mock.calls[src.mock.calls.length - 1]![0]);
+    const url = new URL(media.src);
     expect(url.host).toBe('stream.example.com');
     expect(url.searchParams.get('max_resolution')).toBe('1080p');
-
-    src.mockRestore();
   });
 
   it('omits playback params from src when a playback token is set', () => {
-    const src = vi.spyOn(HlsJsMedia.prototype, 'src', 'set');
+    const { media } = renderWithMedia(
+      <MuxVideo source={{ playbackId: 'abc123', playback: { token: 'jwt', assetStartTime: 3 } }} />
+    );
 
-    render(<MuxVideo source={{ playbackId: 'abc123', playback: { token: 'jwt', assetStartTime: 3 } }} />);
-
-    const url = new URL(src.mock.calls[src.mock.calls.length - 1]![0]);
+    const url = new URL(media.src);
     expect(url.searchParams.get('token')).toBe('jwt');
     expect(url.searchParams.has('asset_start_time')).toBe(false);
+  });
 
-    src.mockRestore();
+  it('forwards engine options from the source prop to the media', () => {
+    const { media } = renderWithMedia(<MuxVideo source={{ playbackId: 'abc123', engine: { maxBufferLength: 60 } }} />);
+
+    expect(media.source?.engine).toEqual({ maxBufferLength: 60 });
   });
 
   it('adds a storyboard track inferred from the source prop', () => {
@@ -85,18 +109,10 @@ describe('MuxVideo', () => {
     consoleError.mockRestore();
   });
 
-  it('clears a storyboard override when the prop is removed', () => {
-    const { container, rerender } = render(
-      <MuxVideo source={{ playbackId: 'abc123' }} storyboard="https://image.mux.com/other/storyboard.vtt" />
-    );
+  it('adds no storyboard track for signed playback without a storyboard token', () => {
+    const { container } = render(<MuxVideo source={{ playbackId: 'abc123', playback: { token: 'jwt' } }} />);
 
-    expect(container.querySelector('track')?.getAttribute('src')).toBe('https://image.mux.com/other/storyboard.vtt');
-
-    rerender(<MuxVideo source={{ playbackId: 'abc123' }} />);
-
-    expect(container.querySelector('track')?.getAttribute('src')).toBe(
-      'https://image.mux.com/abc123/storyboard.vtt?format=webp'
-    );
+    expect(container.querySelector('track')).toBeNull();
   });
 
   it('does not add a storyboard track for live streams', () => {
@@ -109,8 +125,8 @@ describe('MuxVideo', () => {
     streamType.mockRestore();
   });
 
-  it('does not sync the source thumbnail to the media poster', () => {
-    const { container } = render(<MuxVideo source={{ playbackId: 'abc123', thumbnail: { time: 5 } }} />);
+  it('does not sync source.poster to the media poster', () => {
+    const { container } = render(<MuxVideo source={{ playbackId: 'abc123', poster: { time: 5 } }} />);
 
     expect(container.querySelector('video')?.getAttribute('poster')).toBeNull();
   });

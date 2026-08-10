@@ -13,8 +13,8 @@ export default {
     backward: 'Premotaj unazad {seconds} sekundi',
   },
   fullscreen: {
-    enter: 'Pun ekran',
-    exit: 'Izađi iz punog ekrana',
+    enter: 'Režim celog ekrana',
+    exit: 'Izađi iz režima celog ekrana',
   },
   captions: {
     enable: 'Uključi titlove',
@@ -65,7 +65,7 @@ export default {
     captionsOff: 'Titlovi isključeni',
     paused: 'Pauzirano',
     playing: 'Reprodukuje se',
-    fullscreen: 'Pun ekran',
+    fullscreen: 'Režim celog ekrana',
     pip: 'Slika u slici',
     exitPip: 'Izađi iz slike u slici',
     seekedTo: 'Premotano na {time}',
@@ -79,6 +79,7 @@ export default {
     decode: 'Reprodukcija videa je zaustavljena zbog greške u formatu ili zbog verzije vašeg pretraživača.',
     source: 'Video se ne može reproducirati zbog servera, greške u mreži ili format nije podržan.',
     encrypted: 'Medij je šifrovan i nema ključeva za dešifrovanje.',
+    unplayable: 'Plejer ne podržava ovaj medij.',
     title: 'Nešto je pošlo po zlu.',
     unexpected: 'Došlo je do greške. Molimo pokušajte ponovo.',
   },

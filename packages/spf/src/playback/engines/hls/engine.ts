@@ -5,6 +5,8 @@ import {
   type StateSignals,
 } from '../../../core/composition/create-composition';
 import { makeShareSignals, type ShareSignalsConfig } from '../../../core/composition/share-signals';
+import { delayedReschedule } from '../../../core/tasks/delayed-reschedule';
+import type { Reschedule } from '../../../core/tasks/task';
 import type { QualityConfig } from '../../../media/abr/quality-selection';
 import type { BackBufferConfig } from '../../../media/buffer/back-buffer';
 import type { ForwardBufferConfig } from '../../../media/buffer/forward-buffer';
@@ -16,12 +18,15 @@ import {
   getShowingSubtitlesTrackFromMedia,
   removeAllSubtitlesTracksFromMedia,
 } from '../../../media/dom/text/text-track-slots';
+import type { SvtaError } from '../../../media/errors';
 import { parseMultivariantPlaylist } from '../../../media/hls/parse-multivariant';
+import { mediaPlaylistReloadDelay, resolveLiveLatency } from '../../../media/hls/reload-policy';
 import type {
   AudioTrack,
   CanPlayTrack,
   MaybeResolvedPresentation,
   MediaContainerData,
+  ResolvedTrack,
   TextTrack,
   VideoTrack,
 } from '../../../media/types';
@@ -36,6 +41,7 @@ import {
   calculatePresentationDuration,
   type PresentationDurationResolver,
 } from '../../behaviors/calculate-presentation-duration';
+import { collectErrors } from '../../behaviors/collect-errors';
 import { deriveCdnPriority } from '../../behaviors/derive-cdn-priority';
 import { setupAirPlay } from '../../behaviors/dom/airplay';
 import { applyStartPosition } from '../../behaviors/dom/apply-start-position';
@@ -43,9 +49,11 @@ import { endOfStream } from '../../behaviors/dom/end-of-stream';
 import { loadAudioSegments, loadTextTrackSegments, loadVideoSegments } from '../../behaviors/dom/load-segments';
 import { observePlayerSize, type PlayerSizeCapConfig } from '../../behaviors/dom/observe-player-size';
 import { recoverEndStall } from '../../behaviors/dom/recover-end-stall';
+import { seekToLiveEdge } from '../../behaviors/dom/seek-to-live-edge';
 import { setupAudioBufferActors, setupVideoBufferActors } from '../../behaviors/dom/setup-buffer-actors';
 import { setupMediaSource } from '../../behaviors/dom/setup-mediasource';
 import { setupTextTrackActors } from '../../behaviors/dom/setup-text-track-actors';
+import { syncLiveSeekableRange } from '../../behaviors/dom/sync-live-seekable-range';
 import { syncTextTracks } from '../../behaviors/dom/sync-text-tracks';
 import { trackCurrentTime } from '../../behaviors/dom/track-current-time';
 import { trackLoadTriggers } from '../../behaviors/dom/track-load-triggers';
@@ -58,6 +66,7 @@ import {
   type DeriveStartMediaTime,
   deriveSharedMinStartMediaTime,
   establishStartMediaTime,
+  gateFirstParseOnAnchor,
 } from '../../behaviors/establish-start-media-time';
 import { type ParsePresentation, resolvePresentation } from '../../behaviors/resolve-presentation';
 import { resolveAudioTrack, resolveTextTrack, resolveVideoTrack } from '../../behaviors/resolve-track';
@@ -65,6 +74,10 @@ import { type FailoverMonitorConfig, setupFailoverMonitor } from '../../behavior
 import { syncPreload } from '../../behaviors/sync-preload';
 import { switchAudioTrack, switchTextTrack, switchVideoTrack } from '../../behaviors/track-switching';
 import { relocatingTextPipelines, relocationPipelinesFor } from '../../primitives/relocation-pipelines';
+import {
+  type ReportUnsupportedTrackConditions,
+  reportUnsupportedTrackConditions,
+} from '../../primitives/report-track-conditions';
 import type { TextTrackSegmentResolver } from '../../primitives/text-segment-load-pipeline';
 
 // ============================================================================
@@ -127,6 +140,14 @@ export interface SimpleHlsEngineState {
    * means all CDNs are eligible.
    */
   failedCdns?: string[];
+  /**
+   * Conditions reported during playback, in the order encountered — appended by
+   * whichever behavior detects one (`emitError`), owned and cleared per source by
+   * `collectErrors`. Carries no severity: which of these is fatal is decided
+   * above the engine, at the adapter. See
+   * `internal/design/spf/features/errors.md`.
+   */
+  errors?: SvtaError[];
   currentTime?: number;
   /**
    * Rendered area of the attached media element, in device pixels. Owned by
@@ -211,6 +232,14 @@ export interface SimpleHlsEngineConfig extends ShareSignalsConfig<SimpleHlsEngin
    * codec).
    */
   canPlayTrack?: CanPlayTrack;
+  /**
+   * Conditions reported about each rendition as it resolves — the *causes* behind
+   * a later verdict, and the copy a verdict reuses when they agree. Defaults to
+   * {@link reportUnsupportedTrackConditions}, which reports non-fMP4 containers
+   * and encryption; supply your own to report a different set (a provider that
+   * never ships MPEG-TS can drop that check) or `() => []` to report nothing.
+   */
+  reportUnsupportedTrackConditions?: ReportUnsupportedTrackConditions;
   preferredAudioLanguage?: string;
   preferredSubtitleLanguage?: string;
   includeForcedTracks?: boolean;
@@ -320,6 +349,15 @@ export interface SimpleHlsEngineConfig extends ShareSignalsConfig<SimpleHlsEngin
    * `behaviors/dom/recover-end-stall`.
    */
   endStallNudgeWindow?: number;
+  /**
+   * Live media-playlist re-run policy for the resolve* loaders' `RecurringRunner`:
+   * returns a promise that resolves when the playlist should reload, or `null` to
+   * stop. Defaults to `mediaPlaylistReloadDelay` (target-duration cadence, half on
+   * an unchanged window, stop on `#EXT-X-ENDLIST`) composed with a cancellable
+   * `sleep`. Inert for VoD (a complete playlist stops it after the first resolve).
+   * Override to tune live reload timing.
+   */
+  reschedule?: Reschedule<ResolvedTrack>;
 }
 
 // ============================================================================
@@ -383,6 +421,7 @@ export function createSimpleHlsEngine(
     // sibling source alternatives part of resource selection.
     attachMediaSource: attachMediaSourceAsSourceElement,
     canPlayTrack: config.canPlayTrack ?? canPlayTrack,
+    reportUnsupportedTrackConditions: config.reportUnsupportedTrackConditions ?? reportUnsupportedTrackConditions,
     resolveTextTrackSegment: config.resolveTextTrackSegment ?? resolveVttSegment,
     // Non-zero-PTS relocation (spike): the text pipeline rebases cues onto the
     // relocated 0-based timeline. Remove `textMessagePipelines` to drop text relocation.
@@ -397,6 +436,18 @@ export function createSimpleHlsEngine(
     // these two lines with the reactor.
     videoMessagePipelines: relocationPipelinesFor('video', deriveStartMediaTime),
     audioMessagePipelines: relocationPipelinesFor('audio', deriveStartMediaTime),
+    // Live-anchor establishment order: each non-reference track's first parse
+    // waits for the reference track to settle the wall-clock anchor question
+    // (see `gate-first-parse.ts`); pairs with the reactor's anchor stamp.
+    gateFirstParse: gateFirstParseOnAnchor,
+    // Format-neutral live-latency seam for `seekToLiveEdge` — the HLS resolver
+    // (HOLD-BACK); a DASH engine would inject `suggestedPresentationDelay`.
+    resolveLiveLatency,
+    // The resolve* loaders' RecurringRunner re-runs on this `reschedule`: the pure
+    // target-duration cadence, start-anchored + made awaitable by `delayedReschedule`.
+    // Inert for VoD (the cadence returns null once a playlist is complete), so it
+    // composes always.
+    reschedule: config.reschedule ?? delayedReschedule(mediaPlaylistReloadDelay),
   };
 
   return createComposition(
@@ -425,6 +476,11 @@ export function createSimpleHlsEngine(
       // `failedCdns` (tripped directly by track resolution on a failed
       // media-playlist fetch) and removes each CDN once its cooldown lapses.
       setupFailoverMonitor,
+
+      // Owns `errors` and its per-source lifecycle. Composed before the
+      // behaviors that report into it so the slot exists when they first run;
+      // reporting no-ops if it isn't composed at all.
+      collectErrors,
 
       // Resolve selected tracks (fetch media playlists). Composed before the
       // switch* slot owners; selection is reactive, so a resolve* re-fires once
@@ -484,6 +540,13 @@ export function createSimpleHlsEngine(
       // Segment loading
       loadVideoSegments,
       loadAudioSegments,
+
+      // Live: declare the seekable window, then command the live-edge start
+      // position + keep the playhead in-window. No-op for complete playlists
+      // (VoD / ended). `seekToLiveEdge` commands `state.startPosition`;
+      // `applyStartPosition` (composed above) performs the seek.
+      syncLiveSeekableRange,
+      seekToLiveEdge,
 
       // End of stream coordination
       endOfStream,

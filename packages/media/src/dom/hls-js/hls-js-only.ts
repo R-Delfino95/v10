@@ -10,6 +10,7 @@ import type {
 } from '../../core/types';
 import { HTMLVideoElementHost } from '../video-host';
 import { HlsJsMediaAirPlayMixin } from './airplay-bridge';
+import { setupDrm } from './drm';
 import { HlsJsMediaErrorsMixin } from './errors';
 import { HlsJsMediaLiveMixin } from './live';
 import { HlsJsMediaMediaTracksMixin } from './media-tracks';
@@ -27,15 +28,22 @@ export const defaultHlsConfig: Partial<HlsConfig> = {
   autoStartLoad: false,
 };
 
+export interface HlsJsOnlyMediaParams {
+  /** Options forwarded to the hls.js constructor, merged over {@link defaultHlsConfig}. */
+  config: Partial<HlsConfig>;
+}
+
 class HlsJsOnlyMediaBase extends HTMLVideoElementHost implements MediaEngineHost<Hls, HTMLVideoElement> {
   #engine: Hls | null = null;
 
-  constructor(params: { config: Partial<HlsConfig> }) {
+  constructor(params: HlsJsOnlyMediaParams) {
     super();
     this.#engine = new Hls({
       ...defaultHlsConfig,
       ...params.config,
     });
+
+    setupDrm(this.#engine);
   }
 
   get engine() {

@@ -1,17 +1,12 @@
-import { MenuCore, MenuDataAttrs, type MenuInput, POPUP_HOST_ATTR, PopoverCSSVars } from '@videojs/core';
+import { MenuCore, MenuDataAttrs, type MenuInput, POPUP_HOST_ATTR } from '@videojs/core';
 import {
   applyElementProps,
   applyStateDataAttrs,
   createMenu,
   createMenuViewTransition,
   createTransition,
-  getAnchorNameStyle,
-  getAnchorPositionStyle,
   getMenuViewportAttrs,
   getMenuViewTransitionAttrs,
-  getPopupPositionRect,
-  getPositionedSide,
-  getPositioningBoundaryRect,
   getRootPositionOptions,
   isMenuNavigationKey,
   type MenuApi,
@@ -21,8 +16,7 @@ import {
   type NavigationState,
   observeMenuViewContent,
   type PositioningBoundary,
-  resolveOffsets,
-  resolvePositioningBoundary,
+  selectControls,
   syncMenuViewRoot,
   syncMenuViewTransition,
   type UIFocusEvent,
@@ -31,8 +25,9 @@ import {
 import type { PropertyDeclarationMap, PropertyValues } from '@videojs/element';
 import { ContextConsumer, ContextProvider } from '@videojs/element/context';
 import { SnapshotController } from '@videojs/store/html';
-import { applyStyles, supportsAnchorPositioning, tryHidePopover, tryShowPopover } from '@videojs/utils/dom';
-import { containerContext } from '../../player/context';
+import { tryHidePopover, tryShowPopover } from '@videojs/utils/dom';
+import { containerContext, playerContext } from '../../player/context';
+import { PlayerController } from '../../player/player-controller';
 import { MediaElement } from '../media-element';
 import { PositionController } from '../position-controller';
 import { type MenuContextValue, menuContext } from './context';
@@ -63,6 +58,7 @@ export class MenuElement extends MediaElement {
   readonly #core = new MenuCore();
   readonly #provider = new ContextProvider(this, { context: menuContext });
   readonly #position = new PositionController(this);
+  readonly #controlsState = new PlayerController(this, playerContext, selectControls);
   readonly #containerCtx = new ContextConsumer(this, { context: containerContext, subscribe: true });
   // Consume parent menu context — present when this is a nested (submenu) element.
   readonly #parentCtx = new ContextConsumer(this, { context: menuContext, subscribe: true });
@@ -89,6 +85,7 @@ export class MenuElement extends MediaElement {
   #triggerAbort: AbortController | null = null;
   #cleanupContentObserver: (() => void) | null = null;
   #currentTrigger: HTMLElement | null = null;
+  #releaseControlsLock: (() => void) | null = null;
 
   override connectedCallback(): void {
     super.connectedCallback();
@@ -147,6 +144,7 @@ export class MenuElement extends MediaElement {
   }
 
   override disconnectedCallback(): void {
+    this.#releaseControlsVisibilityLock();
     super.disconnectedCallback();
     this.#cleanupContentObserver?.();
     this.#cleanupContentObserver = null;
@@ -202,6 +200,12 @@ export class MenuElement extends MediaElement {
     this.#core.setInput(input);
     const state = this.#core.getState();
 
+    if (!isSubmenu && state.open) {
+      this.#releaseControlsLock ??= this.#controlsState.value?.requestControlsLock() ?? null;
+    } else {
+      this.#releaseControlsVisibilityLock();
+    }
+
     if (isSubmenu && parentCtx) {
       this.#updateAsSubmenu(parentCtx);
     } else {
@@ -218,6 +222,11 @@ export class MenuElement extends MediaElement {
       navigation: this.#navState,
       parentMenu,
     });
+  }
+
+  #releaseControlsVisibilityLock(): void {
+    this.#releaseControlsLock?.();
+    this.#releaseControlsLock = null;
   }
 
   #updateAsRoot(state: ReturnType<MenuCore['getState']>): void {
@@ -240,7 +249,6 @@ export class MenuElement extends MediaElement {
 
     if (this.#currentTrigger) {
       applyElementProps(this.#currentTrigger, this.#core.getTriggerAttrs(state, this.id));
-      applyStyles(this.#currentTrigger, getAnchorNameStyle(this.id));
     }
 
     if (!state.open) {
@@ -257,48 +265,19 @@ export class MenuElement extends MediaElement {
     syncMenuViewRoot(this, this.#navState.stack.length > 0);
 
     const positionOptions = getRootPositionOptions(state.side, state.align);
-    if (!positionOptions) return;
+    if (!positionOptions || !this.#currentTrigger) return;
 
-    const boundaryElement = this.#getBoundaryElement();
-    const triggerRect = this.#currentTrigger?.getBoundingClientRect();
-    const boundaryRect = getPositioningBoundaryRect(boundaryElement);
-    const offsets = resolveOffsets(this);
-    const anchorSupported = supportsAnchorPositioning();
-    if (!triggerRect) return;
-
-    const getNextPosition = () => {
-      const popupRect = getPopupPositionRect(this, positionOptions.side);
-      const side = getPositionedSide(triggerRect, popupRect, boundaryRect, positionOptions, offsets);
-      const style = getAnchorPositionStyle(
-        this.id,
-        { ...positionOptions, side },
-        triggerRect,
-        anchorSupported ? undefined : popupRect,
-        boundaryRect,
-        offsets
-      );
-
-      return { side, style };
-    };
-    let nextPosition = getNextPosition();
-    let nextStyle = nextPosition.style;
-    this.setAttribute(MenuDataAttrs.side, nextPosition.side);
-
-    if (anchorSupported) {
-      applyStyles(this, nextStyle);
-    }
-
-    const availableWidth = nextStyle[PopoverCSSVars.availableWidth];
-    syncMenuViewRoot(this, this.#navState.stack.length > 0, availableWidth ? { availableWidth } : undefined);
-
-    if (!anchorSupported) {
-      nextPosition = getNextPosition();
-      nextStyle = nextPosition.style;
-      this.setAttribute(MenuDataAttrs.side, nextPosition.side);
-      applyStyles(this, nextStyle);
-    }
-
-    this.#position.sync(this.#currentTrigger, boundaryElement);
+    this.#position.sync({
+      anchorName: this.id,
+      position: positionOptions,
+      trigger: this.#currentTrigger,
+      boundary: this.boundary,
+      container: this.#containerCtx.value?.container ?? null,
+      onSideChange: (side) => {
+        this.setAttribute(MenuDataAttrs.side, side);
+        syncMenuViewRoot(this, this.#navState.stack.length > 0);
+      },
+    });
   }
 
   #updateAsSubmenu(parentCtx: MenuContextValue): void {
@@ -385,18 +364,10 @@ export class MenuElement extends MediaElement {
         'aria-haspopup': undefined,
         'aria-controls': undefined,
       });
-      this.#currentTrigger.style.removeProperty('anchor-name');
     }
 
     this.#triggerAbort?.abort();
     this.#triggerAbort = null;
     this.#currentTrigger = null;
-  }
-
-  #getBoundaryElement(): Element | null {
-    return resolvePositioningBoundary(this.boundary, {
-      container: this.#containerCtx.value?.container ?? null,
-      root: this.getRootNode() as Document | ShadowRoot,
-    });
   }
 }
