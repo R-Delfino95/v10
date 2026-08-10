@@ -14,9 +14,10 @@
  *
  *   1. **user intent** — a soft filter on `user*TrackSelection`: narrow to the
  *      partial-track match; an empty match falls through to the full set.
- *   2. **player size** — a soft filter on `playerPixelArea` (`capToPlayerSize`,
- *      video only): narrow to the smallest rendition tier covering the player,
- *      plus everything below it. No-op without a measurement.
+ *   2. **player size** — a soft filter on `playerWidth` / `playerHeight` /
+ *      `playerScale` (`capToPlayerSize`, video only): narrow to the smallest
+ *      rendition tier covering the player, plus everything below it. No-op
+ *      without a measurement.
  *   3. **active CDN** — a soft filter on `cdnPriority` (`preferActiveCdn`):
  *      narrow to the highest-priority CDN that still has tracks; an empty match
  *      falls through. Shared by video and audio, so every type stays on one CDN
@@ -395,13 +396,16 @@ type BandwidthRankerConfig<S extends SelectionKey, T extends SwitchableTrack> = 
   SwitchVideoTrackConfig;
 
 /**
- * State the player-size cap reads: the lifecycle map plus an *optional*
- * `playerPixelArea`. The signal exists only when the composition includes
- * `observePlayerSize` (which materializes + owns it); the cap reads it
- * defensively and passes everything through when it's absent or `0`.
+ * State the player-size cap reads: the lifecycle map plus the *optional*
+ * player measurement — the rendered box in CSS pixels plus the device-pixel
+ * scale to read it at. The signals exist only when the composition includes
+ * `observePlayerSize` (which materializes + owns them); the cap reads them
+ * defensively and passes everything through when they're absent or `0`.
  */
 type PlayerSizeCapStateMap<S extends SelectionKey> = TrackSwitchingStateMap<S> & {
-  playerPixelArea?: ReadonlySignal<number | undefined>;
+  playerWidth?: ReadonlySignal<number | undefined>;
+  playerHeight?: ReadonlySignal<number | undefined>;
+  playerScale?: ReadonlySignal<number | undefined>;
 };
 
 /**
@@ -490,15 +494,24 @@ function filterByUserSelection<S extends SelectionKey, U extends UserSelectionKe
  * Renditions declaring no RESOLUTION compare as area `0` and are never capped
  * out — they can't be judged against the player, and dropping them could strand
  * a source whose variants all omit it. Passes through entirely when there's no
- * measurement (see `playerPixelArea`).
+ * measurement (see `playerWidth` / `playerHeight`).
+ *
+ * The comparison happens in device pixels: `observePlayerSize` stores the box
+ * raw, so the area — and the scale entering it squared, since both axes scale —
+ * is computed here, by the consumer that wants an area.
  */
 function capToPlayerSize<S extends SelectionKey, T extends SwitchableTrack>(
   tracks: readonly T[],
   { state }: SelectionRuleDeps<PlayerSizeCapStateMap<S>, AnySlotMap, TrackSwitchingConfig<S, T>>
 ): readonly T[] {
-  const playerPixelArea = state.playerPixelArea?.get();
-  if (!playerPixelArea) return tracks;
+  // All three are read before the guard so a later scale-only change still
+  // re-runs the chain.
+  const width = state.playerWidth?.get();
+  const height = state.playerHeight?.get();
+  const scale = state.playerScale?.get() ?? 1;
+  if (!width || !height) return tracks;
 
+  const playerPixelArea = width * scale * (height * scale);
   const covering = tracks.map((track) => resolutionArea(track)).filter((area) => area >= playerPixelArea);
   // Nothing covers the player — no opinion, fall through to the full set.
   if (!covering.length) return [];

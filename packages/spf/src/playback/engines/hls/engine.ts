@@ -150,12 +150,16 @@ export interface SimpleHlsEngineState {
   errors?: SvtaError[];
   currentTime?: number;
   /**
-   * Rendered area of the attached media element, in device pixels. Owned by
-   * `observePlayerSize`, read by `track-switching`'s `capToPlayerSize`. Absent
-   * or `0` means no measurement — nothing attached, hidden, or not yet laid
-   * out — and the cap goes inert.
+   * Rendered box of the attached media element, in CSS pixels, plus the
+   * device-pixel scale to read it at. Owned by `observePlayerSize`, read by
+   * `track-switching`'s `capToPlayerSize` — which multiplies them into an area
+   * itself, so a future cap on a different axis (max height, say) can ask its
+   * own question of the same measurement. All three absent means no measurement
+   * — nothing attached, hidden, or not yet laid out — and the cap goes inert.
    */
-  playerPixelArea?: number;
+  playerWidth?: number;
+  playerHeight?: number;
+  playerScale?: number;
   loadActivated?: boolean;
   /**
    * One-shot command: start the current source at this position

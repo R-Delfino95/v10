@@ -1,29 +1,40 @@
 /**
- * **Player-size measurement.** Mirrors the rendered area of the attached media
- * element into `state.playerPixelArea`. Measurement is the whole job — the
- * policy built on it is `track-switching`'s `capToPlayerSize` rule.
+ * **Player-size measurement.** Mirrors the rendered box of the attached media
+ * element into `state.playerWidth`, `state.playerHeight` and
+ * `state.playerScale`. Measurement is the whole job — the policy built on it is
+ * `track-switching`'s `capToPlayerSize` rule.
  *
- * Two things move the number, and both are watched:
- * - the element's box, via `ResizeObserver`
- * - `devicePixelRatio`, via a `(resolution: …dppx)` media query. A DPR change
- *   (browser zoom, dragging the window to a different display) does not
- *   necessarily resize the element, so the observer alone would miss it.
+ * The measuring itself belongs to `media/dom`: `observeElementSize` watches the
+ * box and `observeDevicePixelRatio` watches the density. This behavior only
+ * composes them and publishes what they report, so both halves stay usable —
+ * and testable — outside playback.
  *
- * The area is `cssWidth × dpr × cssHeight × dpr` — dpr enters squared because
- * both axes scale.
+ * Width and height are stored raw, in CSS pixels, with the scale beside them
+ * rather than multiplied in. An area is one consumer's question; a height cap
+ * or a density-driven policy asks a different one, and each can do its own
+ * arithmetic from these three.
  *
  * An unmeasurable element — detached, `display: none`, not yet laid out —
- * reports a `0` box, which writes `undefined` rather than `0` per the slot's
- * contract.
+ * reports a `0` box, which writes `undefined` rather than `0`. The three slots
+ * clear and fill together, so "no measurement" is unambiguous from any of them.
  */
 
-import { listen } from '@videojs/utils/dom';
 import { defineBehavior } from '../../../core/composition/create-composition';
 import { effect } from '../../../core/signals/effect';
 import type { ReadonlySignal, Signal } from '../../../core/signals/primitives';
+import { getDevicePixelRatio, observeDevicePixelRatio } from '../../../media/dom/device-pixel-ratio';
+import { type ElementSize, observeElementSize } from '../../../media/dom/element-size';
 
 export interface PlayerSizeState {
-  playerPixelArea?: number;
+  /** Content-box width of the media element, in CSS pixels. */
+  playerWidth?: number;
+  /** Content-box height of the media element, in CSS pixels. */
+  playerHeight?: number;
+  /**
+   * Device pixels per CSS pixel at measurement time. `1` when
+   * `useDevicePixelRatio` is off, so consumers can always multiply by it.
+   */
+  playerScale?: number;
 }
 
 export interface PlayerSizeContext {
@@ -32,12 +43,14 @@ export interface PlayerSizeContext {
 
 /** Player-size cap policy. Supplied via engine config. */
 export interface PlayerSizeCapConfig {
-  /** Measure at all. `false` leaves `playerPixelArea` unset, so the cap is inert. */
+  /** Measure at all. `false` leaves the slots unset, so the cap is inert. */
   enabled: boolean;
   /**
-   * Scale the measurement by `devicePixelRatio`. A 640-CSS-px player on a 2x
-   * display is really 1280 device pixels; measuring in CSS pixels would cap it
-   * to 720p and under-serve the display.
+   * Track `devicePixelRatio` as the scale. A 640-CSS-px player on a 2x display
+   * is really 1280 device pixels; reporting a scale of `1` there would cap it
+   * to 720p and under-serve the display. `false` pins the scale at `1` and
+   * stops watching the ratio, which is what a consumer measuring in CSS pixels
+   * wants.
    */
   useDevicePixelRatio: boolean;
 }
@@ -52,37 +65,16 @@ export interface ObservePlayerSizeConfig {
   playerSizeCap?: Partial<PlayerSizeCapConfig>;
 }
 
-/**
- * Call `onChange` whenever `devicePixelRatio` changes. A resolution media query
- * only ever matches the ratio it was built with, so each change detaches the
- * current query and arms a fresh one against the new ratio.
- */
-function watchDevicePixelRatio(onChange: () => void): () => void {
-  if (typeof globalThis.matchMedia !== 'function') return () => {};
-
-  let removeListener = () => {};
-
-  const arm = () => {
-    const query = globalThis.matchMedia(`(resolution: ${globalThis.devicePixelRatio}dppx)`);
-    removeListener = listen(query, 'change', handleChange);
-  };
-
-  const handleChange = () => {
-    removeListener();
-    arm();
-    onChange();
-  };
-
-  arm();
-  return () => removeListener();
-}
-
 function observePlayerSizeSetup({
   state,
   context,
   config = {},
 }: {
-  state: { playerPixelArea: Signal<PlayerSizeState['playerPixelArea']> };
+  state: {
+    playerWidth: Signal<PlayerSizeState['playerWidth']>;
+    playerHeight: Signal<PlayerSizeState['playerHeight']>;
+    playerScale: Signal<PlayerSizeState['playerScale']>;
+  };
   context: { mediaElement: ReadonlySignal<PlayerSizeContext['mediaElement']> };
   config?: ObservePlayerSizeConfig;
 }): () => void {
@@ -90,41 +82,58 @@ function observePlayerSizeSetup({
 
   return effect(() => {
     const mediaElement = context.mediaElement.get();
-    if (!enabled || !mediaElement) {
-      state.playerPixelArea.set(undefined);
-      return;
-    }
 
-    const measure = () => {
-      const scale = useDevicePixelRatio ? globalThis.devicePixelRatio || 1 : 1;
-      const area = mediaElement.clientWidth * scale * (mediaElement.clientHeight * scale);
-      state.playerPixelArea.set(area > 0 ? area : undefined);
+    // The box the observer last reported, kept because a density change has no
+    // entry of its own to re-derive it from — nothing resized.
+    let size: ElementSize | undefined;
+    let scale = useDevicePixelRatio ? getDevicePixelRatio() : 1;
+
+    // No throttling: each slot compares by `Object.is`, so a resize that leaves
+    // the numbers alone notifies nothing, and one that changes them costs a
+    // re-run of the selection rule chain.
+    const publish = () => {
+      const measured = size && size.width > 0 && size.height > 0 ? size : undefined;
+      state.playerWidth.set(measured?.width);
+      state.playerHeight.set(measured?.height);
+      state.playerScale.set(measured ? scale : undefined);
     };
 
-    measure();
+    // Clear first: a swapped-in element hasn't been measured yet, and the
+    // previous element's box is a worse answer than no answer. The observer
+    // fills it back in on the next layout, well before any selection that
+    // waits on a network round-trip.
+    publish();
 
-    // No throttling: the slot compares by `Object.is`, so a resize that doesn't
-    // change the area notifies nothing, and one that does costs a re-run of the
-    // selection rule chain.
-    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : undefined;
-    observer?.observe(mediaElement);
-    const stopWatchingDevicePixelRatio = useDevicePixelRatio ? watchDevicePixelRatio(measure) : undefined;
+    if (!enabled || !mediaElement) return;
+
+    const stopObservingSize = observeElementSize(mediaElement, (next) => {
+      size = next;
+      publish();
+    });
+
+    const stopObservingScale = useDevicePixelRatio
+      ? observeDevicePixelRatio((next) => {
+          scale = next;
+          publish();
+        })
+      : undefined;
 
     return () => {
-      observer?.disconnect();
-      stopWatchingDevicePixelRatio?.();
+      stopObservingSize();
+      stopObservingScale?.();
     };
   });
 }
 
 /**
- * Track the rendered area of the attached media element in `playerPixelArea`.
+ * Track the rendered box of the attached media element in `playerWidth`,
+ * `playerHeight` and `playerScale`.
  *
  * @example
  * const cleanup = observePlayerSize.setup({ state, context });
  */
 export const observePlayerSize = defineBehavior({
-  stateKeys: ['playerPixelArea'],
+  stateKeys: ['playerWidth', 'playerHeight', 'playerScale'],
   contextKeys: ['mediaElement'],
   setup: observePlayerSizeSetup,
 });

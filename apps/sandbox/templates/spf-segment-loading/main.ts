@@ -189,21 +189,30 @@ function updateNowPlayingQuality() {
 // narrows the candidate set to. Drag the video frame's corner to move it.
 function updatePlayerSizeDisplay() {
   if (!engine) return;
-  const area = engine.state.playerPixelArea.get();
-  if (!area) {
+  const width = engine.state.playerWidth.get();
+  const height = engine.state.playerHeight.get();
+  const scale = engine.state.playerScale.get() ?? 1;
+  if (!width || !height) {
     playerSizeDiv.textContent = '📐 Player size: not measured (cap inert)';
     return;
   }
+  // The same arithmetic capToPlayerSize does on the raw box: the scale enters
+  // squared because both axes scale.
+  const area = width * scale * (height * scale);
   const covering = getVideoTracks(engine.state.presentation.get())
     .map((track) => {
-      const width = 'width' in track ? (track.width ?? 0) : 0;
-      const height = 'height' in track ? (track.height ?? 0) : 0;
-      return { label: width && height ? `${width}×${height}` : 'unsized', area: width * height };
+      const trackWidth = 'width' in track ? (track.width ?? 0) : 0;
+      const trackHeight = 'height' in track ? (track.height ?? 0) : 0;
+      return {
+        label: trackWidth && trackHeight ? `${trackWidth}×${trackHeight}` : 'unsized',
+        area: trackWidth * trackHeight,
+      };
     })
     .filter((tier) => tier.area >= area)
     .sort((a, b) => a.area - b.area);
   const cap = covering[0]?.label ?? 'none — player exceeds every rendition';
-  playerSizeDiv.textContent = `📐 Player: ${Math.round(area).toLocaleString()} device px²  ·  cap: ${cap}`;
+  const box = `${Math.round(width)}×${Math.round(height)} CSS px @ ${scale}x`;
+  playerSizeDiv.textContent = `📐 Player: ${box}  =  ${Math.round(area).toLocaleString()} device px²  ·  cap: ${cap}`;
 }
 
 // Mirrors getBandwidthEstimate logic from bandwidth-estimator.ts.
